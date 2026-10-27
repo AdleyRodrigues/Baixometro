@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = ["apps/api"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+authors = ["Adley Rodrigues <adleyrodrigues2015@gmail.com>"]
