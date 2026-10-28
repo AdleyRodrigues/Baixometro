@@ -49,6 +49,7 @@ services:
     working_dir: /app
     environment:
       VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+      CI: "true"
     command: sh -c "pnpm install && pnpm --filter @baixometro/web dev --host 0.0.0.0"
     ports:
       - "5173:5173"

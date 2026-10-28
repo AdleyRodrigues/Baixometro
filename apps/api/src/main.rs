@@ -1,24 +1,49 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use axum::{routing::get, Json, Router};
+use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
 use serde::{Deserialize, Serialize};
-use sqlx::postgres::PgPoolOptions;
+use sqlx::postgres::{PgPool, PgPoolOptions};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use ts_rs::TS;
 
+/// Estado compartilhado da aplicação, injetado nos handlers via `State`.
+#[derive(Clone)]
+pub struct AppState {
+    pub pool: PgPool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct HealthResponse {
     pub status: String,
+    pub database: String,
 }
 
-async fn health_check() -> Json<HealthResponse> {
-    Json(HealthResponse {
-        status: "ok".to_string(),
-    })
+/// Verifica a API e a conectividade com o Postgres (`SELECT 1`).
+/// Retorna 200 quando o banco responde e 503 caso contrário.
+async fn health_check(State(state): State<AppState>) -> (StatusCode, Json<HealthResponse>) {
+    match sqlx::query("SELECT 1").execute(&state.pool).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(HealthResponse {
+                status: "ok".to_string(),
+                database: "connected".to_string(),
+            }),
+        ),
+        Err(err) => {
+            tracing::warn!("Health check: falha ao consultar o Postgres ({err})");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(HealthResponse {
+                    status: "degraded".to_string(),
+                    database: "disconnected".to_string(),
+                }),
+            )
+        }
+    }
 }
 
 #[tokio::main]
@@ -43,22 +68,29 @@ async fn main() -> anyhow::Result<()> {
     });
 
     tracing::info!("Conectando ao PostgreSQL em: {}", database_url);
-    let pool = PgPoolOptions::new()
+    let pool_options = PgPoolOptions::new()
         .max_connections(20)
-        .acquire_timeout(Duration::from_secs(5))
-        .connect(&database_url)
-        .await;
+        .acquire_timeout(Duration::from_secs(5));
 
-    match pool {
-        Ok(_) => tracing::info!("Conectado ao PostgreSQL com sucesso"),
-        Err(err) => {
-            tracing::warn!("Aviso: Falha temporária ao conectar no Postgres ({err}). Continuando inicialização...");
+    let pool = match pool_options.clone().connect(&database_url).await {
+        Ok(pool) => {
+            tracing::info!("Conectado ao PostgreSQL com sucesso");
+            pool
         }
-    }
+        Err(err) => {
+            // Mantém a API de pé: o pool lazy reconecta quando o banco voltar,
+            // e o /health reporta "disconnected" enquanto isso.
+            tracing::warn!("Aviso: Falha temporária ao conectar no Postgres ({err}). Continuando com pool lazy...");
+            pool_options.connect_lazy(&database_url)?
+        }
+    };
+
+    let state = AppState { pool };
 
     // 4. Registrar rotas, CORS permissive e TraceLayer
     let app = Router::new()
         .route("/health", get(health_check))
+        .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive());
 
