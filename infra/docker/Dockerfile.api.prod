@@ -22,11 +22,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 \
     ca-certificates \
     curl \
+    chromium \
+    chromium-driver \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY --from=builder /app/target/release/baixometro_api /usr/local/bin/baixometro_api
+
+ENV CHROME_BIN=/usr/bin/chromium
 
 ENV API_PORT=3000
 ENV RUST_LOG=info,baixometro_api=info

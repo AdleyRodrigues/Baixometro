@@ -5,7 +5,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     curl \
     ca-certificates \
+    chromium \
+    chromium-driver \
     && rm -rf /var/lib/apt/lists/*
+
+ENV CHROME_BIN=/usr/bin/chromium
 
 RUN rustup component add rustfmt && ((curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash && cargo binstall --no-confirm cargo-watch) || cargo install cargo-watch)
 
