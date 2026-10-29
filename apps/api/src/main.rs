@@ -1,7 +1,19 @@
+mod auth;
+mod error;
+mod importers;
+mod models;
+mod routes;
+
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    middleware,
+    routing::{get, post},
+    Json, Router,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use tower_http::cors::CorsLayer;
@@ -80,21 +92,52 @@ async fn main() -> anyhow::Result<()> {
         Err(err) => {
             // Mantém a API de pé: o pool lazy reconecta quando o banco voltar,
             // e o /health reporta "disconnected" enquanto isso.
-            tracing::warn!("Aviso: Falha temporária ao conectar no Postgres ({err}). Continuando com pool lazy...");
+            tracing::warn!(
+                "Aviso: Falha temporária ao conectar no Postgres ({err}). Continuando com pool lazy..."
+            );
             pool_options.connect_lazy(&database_url)?
         }
     };
 
+    // 4. Rodar migrations e garantir usuário mock no boot
+    match sqlx::migrate!("../../infra/migrations").run(&pool).await {
+        Ok(()) => {
+            tracing::info!("Migrations aplicadas com sucesso");
+            if let Err(err) = auth::ensure_mock_user(&pool).await {
+                tracing::error!("Falha ao garantir usuário mock: {err}");
+            } else {
+                tracing::info!("Usuário mock garantido ({})", auth::MOCK_USER_EMAIL);
+            }
+        }
+        Err(err) => {
+            tracing::error!("Falha ao executar migrations no boot: {err}");
+        }
+    }
+
     let state = AppState { pool };
 
-    // 4. Registrar rotas, CORS permissive e TraceLayer
+    // 5. Registrar rotas, middleware de auth mock, CORS permissive e TraceLayer
     let app = Router::new()
         .route("/health", get(health_check))
+        .route(
+            "/categories",
+            get(routes::categories::list_categories).post(routes::categories::create_category),
+        )
+        .route(
+            "/receipts",
+            get(routes::receipts::list_receipts).post(routes::receipts::create_receipt),
+        )
+        .route("/receipts/import", post(routes::receipts::import_receipt))
+        .route(
+            "/dashboard/summary",
+            get(routes::dashboard::get_dashboard_summary),
+        )
+        .layer(middleware::from_fn(auth::mock_auth))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive());
 
-    // 5. Escutar em 0.0.0.0:3000 (ou API_PORT configurado)
+    // 6. Escutar em 0.0.0.0:3000 (ou API_PORT configurado)
     let port = std::env::var("API_PORT")
         .unwrap_or_else(|_| "3000".to_string())
         .parse::<u16>()

@@ -4,9 +4,12 @@
   "private": true,
   "description": "Baixômetro - Gerenciador pessoal de preços de supermercado",
   "scripts": {
+    "dev": "pnpm --filter @baixometro/web dev",
     "dev:web": "pnpm --filter @baixometro/web dev",
+    "build": "pnpm --filter @baixometro/web build",
     "build:web": "pnpm --filter @baixometro/web build",
-    "lint:web": "pnpm --filter @baixometro/web lint"
+    "lint:web": "pnpm --filter @baixometro/web lint",
+    "lint": "pnpm --filter @baixometro/web lint"
   },
   "packageManager": "pnpm@11.5.1"
 }

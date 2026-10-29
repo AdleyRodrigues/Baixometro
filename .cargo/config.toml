@@ -1,0 +1,5 @@
+# Diretório de saída dos bindings TypeScript gerados pelo ts-rs (`cargo test`).
+# Variáveis já definidas no ambiente (ex.: docker-compose) têm precedência.
+[env]
+TS_RS_EXPORT_DIR = { value = "packages/shared-types", relative = true }
+

@@ -48,7 +48,8 @@ services:
     restart: unless-stopped
     working_dir: /app
     environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+      VITE_API_URL: ${VITE_API_URL:-/api}
+      VITE_API_PROXY_TARGET: http://api:3000
       CI: "true"
     command: sh -c "pnpm install && pnpm --filter @baixometro/web dev --host 0.0.0.0"
     ports:
