@@ -15,4 +15,14 @@
 2. **Validação no navegador:** Utilize o MCP do Chrome DevTools (`chrome-devtools-mcp`) para inspecionar o console e garantir ausência de erros em runtime.
 3. **Controle de commits:** Nunca faça `git commit` automaticamente sem autorização explícita do usuário; mostre o `git status` ao final e aguarde revisão.
 4. **Informar portas ativas:** Sempre informe claramente em quais portas e URLs o Frontend e o Backend estão rodando ao final das respostas.
+5. **Formatação de Types TypeScript:** Sempre que declarar, editar ou gerar `types`/`interfaces` (especialmente em `packages/shared-types` e no frontend), adote organização vertical multi-linha (1 campo por linha, 2 espaços de indentação, vírgula no final e sem comentário de cabeçalho do `ts-rs`):
+   ```ts
+   export type Category = {
+     id: string,
+     name: string,
+     color: string,
+     icon: string,
+   };
+   ```
+
 

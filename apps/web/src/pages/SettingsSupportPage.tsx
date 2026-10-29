@@ -22,7 +22,7 @@ import {
 } from '../components/ui/card';
 import { cn } from '../lib/utils';
 
-const PIX_KEY_PLACEHOLDER = 'chave-pix@exemplo.com';
+const PIX_KEY = (import.meta.env.VITE_PIX_KEY ?? '').trim();
 const GITHUB_SPONSORS_URL = 'https://github.com/sponsors/AdleyRodrigues';
 const KOFI_URL = 'https://ko-fi.com/adleyrodrigues';
 
@@ -30,8 +30,9 @@ export default function SettingsSupportPage() {
   const [copied, setCopied] = useState(false);
 
   const handleCopyPix = async () => {
+    if (!PIX_KEY) return;
     try {
-      await navigator.clipboard.writeText(PIX_KEY_PLACEHOLDER);
+      await navigator.clipboard.writeText(PIX_KEY);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     } catch {
@@ -95,26 +96,26 @@ export default function SettingsSupportPage() {
         </CardContent>
       </Card>
 
-      {/* Apoio via Pix (Chave + QR Code Placeholder) */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <QrCode className="h-4 w-4 text-[#10b981]" />
-            <span>Doação Rápida via Pix</span>
-          </CardTitle>
-          <CardDescription>
-            Copie a chave Pix abaixo ou escaneie o QR Code no aplicativo do seu banco
-          </CardDescription>
-        </CardHeader>
+      {/* Apoio via Pix (apenas exibido se VITE_PIX_KEY estiver configurado) */}
+      {Boolean(PIX_KEY) && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <QrCode className="h-4 w-4 text-[#10b981]" />
+              <span>Doação Rápida via Pix</span>
+            </CardTitle>
+            <CardDescription>
+              Copie a chave Pix abaixo para apoiar o desenvolvimento do Baixômetro
+            </CardDescription>
+          </CardHeader>
 
-        <CardContent className="grid grid-cols-1 items-center gap-4 sm:grid-cols-[1fr_180px]">
-          <div className="space-y-3">
+          <CardContent className="space-y-3">
             <div className="rounded-xl border border-[#27272a] bg-[#09090b] p-3.5">
               <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
                 Chave Pix (E-mail / Aleatória)
               </div>
               <div className="mt-1 break-all font-mono text-sm font-semibold text-zinc-100">
-                {PIX_KEY_PLACEHOLDER}
+                {PIX_KEY}
               </div>
             </div>
 
@@ -131,21 +132,9 @@ export default function SettingsSupportPage() {
                 </>
               )}
             </Button>
-          </div>
-
-          {/* Área reservada para imagem do QR Code Pix */}
-          <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[#27272a] bg-[#09090b]/80 p-4 text-center">
-            <div className="flex h-28 w-28 items-center justify-center rounded-lg border border-[#27272a] bg-[#121215] text-[#10b981]">
-              <QrCode className="h-14 w-14 stroke-[1.5]" />
-            </div>
-            <span className="text-[11px] text-zinc-400">
-              QR Code Pix
-              <br />
-              <span className="text-[10px] text-zinc-500">(Substitua por `/pix-qr.png`)</span>
-            </span>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Plataformas Internacionais (GitHub Sponsors & Ko-fi) */}
       <Card>

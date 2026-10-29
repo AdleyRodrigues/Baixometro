@@ -2,6 +2,7 @@ mod auth;
 mod error;
 mod importers;
 mod models;
+mod repository;
 mod routes;
 
 use std::net::SocketAddr;
@@ -9,6 +10,7 @@ use std::time::Duration;
 
 use axum::{
     extract::State,
+    handler::Handler,
     http::StatusCode,
     middleware,
     routing::{get, post, put},
@@ -58,6 +60,16 @@ async fn health_check(State(state): State<AppState>) -> (StatusCode, Json<Health
     }
 }
 
+/// Mascara a senha de uma `DATABASE_URL` para exibição segura nos logs.
+fn redact_database_url(raw: &str) -> String {
+    if let Some((scheme_and_user, host_and_db)) = raw.rsplit_once('@') {
+        if let Some((scheme_and_username, _password)) = scheme_and_user.rsplit_once(':') {
+            return format!("{scheme_and_username}:***@{host_and_db}");
+        }
+    }
+    raw.to_string()
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // 1. Carregar .env via dotenvy
@@ -74,15 +86,18 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Inicializando Baixômetro API...");
 
-    // 3. Conectar ao Postgres com PgPoolOptions (max_connections=20, acquire_timeout=5s)
+    // 3. Conectar ao Postgres (local ou gerenciado: Neon, Supabase, Railway, Render)
     let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
         "postgres://baixometro:baixometro_dev@postgres:5432/baixometro".to_string()
     });
 
-    tracing::info!("Conectando ao PostgreSQL em: {}", database_url);
+    tracing::info!(
+        "Conectando ao PostgreSQL em: {}",
+        redact_database_url(&database_url)
+    );
     let pool_options = PgPoolOptions::new()
         .max_connections(20)
-        .acquire_timeout(Duration::from_secs(5));
+        .acquire_timeout(Duration::from_secs(10));
 
     let pool = match pool_options.clone().connect(&database_url).await {
         Ok(pool) => {
@@ -99,7 +114,7 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    // 4. Rodar migrations no boot
+    // 4. Rodar migrations automaticamente no boot (cria as tabelas em bancos novos/gerenciados)
     match sqlx::migrate!("../../infra/migrations").run(&pool).await {
         Ok(()) => {
             tracing::info!("Migrations aplicadas com sucesso");
@@ -111,17 +126,26 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState { pool };
 
-    // 5. Registrar rotas públicas (/health, /auth/*) e rotas protegidas por JWT
+    // 5. Registrar rotas públicas (/health, /auth/*, /receipts/preview, /public/prices/search) e rotas protegidas por JWT
     let public_routes = Router::new()
         .route("/health", get(health_check))
         .route("/auth/register", post(auth::register))
-        .route("/auth/login", post(auth::login));
-
-    let protected_routes = Router::new()
+        .route("/auth/login", post(auth::login))
+        .route("/receipts/preview", post(routes::receipts::preview_receipt))
+        .route(
+            "/public/prices/search",
+            get(routes::public_prices::search_public_prices),
+        )
         .route(
             "/categories",
-            get(routes::categories::list_categories).post(routes::categories::create_category),
-        )
+            get(routes::categories::list_categories).post(
+                routes::categories::create_category
+                    .layer(middleware::from_fn(auth::auth_middleware)),
+            ),
+        );
+
+    let protected_routes = Router::new()
+        .route("/auth/settings", put(auth::update_user_settings))
         .route(
             "/categories/{id}",
             put(routes::categories::update_category).delete(routes::categories::delete_category),

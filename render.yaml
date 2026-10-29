@@ -1,0 +1,50 @@
+# =============================================================================
+# Render Blueprint — Baixômetro (Deploy de 1 Clique)
+# Documentação: https://render.com/docs/blueprint-spec
+# =============================================================================
+
+databases:
+  - name: baixometro-db
+    databaseName: baixometro
+    user: baixometro
+    plan: free
+
+services:
+  # 1. Backend API (Rust / Axum + SQLx com migrations automáticas no boot)
+  - type: web
+    name: baixometro-api
+    runtime: docker
+    dockerfilePath: ./infra/docker/Dockerfile.api.prod
+    dockerContext: .
+    plan: standard # Mínimo 1GB-2GB RAM para executar o Chromium Headless sem OOM
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "3000"
+      - key: API_PORT
+        value: "3000"
+      - key: RUST_LOG
+        value: info,baixometro_api=info
+      - key: DATABASE_URL
+        fromDatabase:
+          name: baixometro-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+
+  # 2. Frontend SPA (React 19 / Vite / Tailwind CSS)
+  - type: web
+    name: baixometro-web
+    runtime: static
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build:web
+    staticPublishPath: ./apps/web/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        sync: false
+      - key: VITE_PIX_KEY
+        sync: false
+

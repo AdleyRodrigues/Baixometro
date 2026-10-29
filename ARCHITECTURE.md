@@ -75,3 +75,60 @@ erDiagram
 
 O projeto utiliza o **Graphify** para manter um grafo estrutural de símbolos, rotas, componentes e tipos (`graphify-out/`, ignorado pelo Git). Conforme documentado em [`AGENTS.md`](AGENTS.md), agentes de IA devem consultar primeiro o grafo (`python -m graphify query "<termo>"`) antes de percorrer arquivos manualmente, reduzindo drasticamente o consumo de tokens e acelerando diagnósticos arquiteturais.
 
+---
+
+## 5. Estrutura Modular, Responsabilidades e Regra de Ouro (<= 400 Linhas)
+
+Para facilitar a leitura por humanos, manter a manutenibilidade do código e economizar tokens de contexto nas sessões de IA, **nenhum arquivo no repositório (`apps/web/src` ou `apps/api/src`) pode exceder 400 linhas**.
+
+### 🦀 Backend (Rust): Separação de Camadas
+- **`apps/api/src/routes/`**: Camada de transporte HTTP pura. Recebe a requisição Axum, faz validação de payload e devolve a resposta HTTP adequada (JSON, status codes 200, 201, 409, 422).
+- **`apps/api/src/repository/`**: Camada de persistência SQL e regras ACID.
+  - `receipts.rs`: Transação de salvar notas com itens (`save_receipt_with_items`), detecção de duplicatas e substituição pós-revisão.
+  - `products.rs`: Matching canônico (`match_or_create_product`), aliases (`ensure_product_alias`) e normalização R$/kg (`compute_price_per_kg_l`).
+  - `stores.rs`: Resolução ou cadastro de estabelecimentos por CNPJ/Nome (`find_or_create_store`).
+- **`apps/api/src/importers/`**: Módulos especializados de extração de dados fiscais.
+  - `xml.rs`: Parser streaming de XML NFC-e Ceará/Nacional via `quick-xml`.
+  - `html.rs`: Parser SEFAZ HTML com `scraper` e fallback resiliente.
+  - `utils.rs`: Normalização de chaves de acesso de 44 dígitos e regexes.
+
+### ⚛️ Frontend (React): Feature-Driven Design & Colocation
+Os componentes e lógica de negócio são co-localizados dentro de pastas funcionais em `apps/web/src/features/<feature>/`:
+- **`features/receipts/`**:
+  - `components/`: `ReceiptItemRow.tsx`, `DuplicateReceiptAlertModal.tsx`.
+  - `hooks/`: `useNewReceipt.ts` (máquina de estados do formulário, importação XML e QR Code).
+  - `constants.ts` & `utils.ts`: XMLs de exemplo, datas e formatações.
+- **`features/dashboard/`**:
+  - `components/`: `DashboardKpiCards.tsx`, `ProductThermometerSection.tsx`, `PriceAlertsBanner.tsx`, `StoreRankingSection.tsx`, `SpendingChartsSection.tsx`, `CommunityPricesTab.tsx`, `CustomChartTooltip.tsx`.
+  - `hooks/`: `useDashboardData.ts` (carregamento agregado, histórico e insights), `usePublicPrices.ts` (busca de crowdsourcing).
+  - `types.ts`: Paletas de cores e contratos de métricas.
+- **`features/products/components/`**: `EditProductModal.tsx`, `MergeProductModal.tsx`, `DeleteProductModal.tsx`.
+- **`features/categories/components/`**: `CategoryFormModal.tsx`, `DeleteCategoryModal.tsx`.
+- **`pages/`**: Páginas atuam exclusivamente como orquestradores de layout, mantendo-se sempre abaixo de 350 linhas.
+
+### ⚡ Code Splitting e Otimização de Bundle
+- **Dynamic Imports (`React.lazy` + `Suspense`):** Todas as páginas em `App.tsx` são carregadas sob demanda, descarregando dependências pesadas (`html5-qrcode` e `recharts`) do chunk inicial.
+- **Rollup `manualChunks`:** Configurado no `vite.config.ts` para segregar vendors críticos:
+  - `vendor-react` (`react`, `react-dom`, `react-router-dom`)
+  - `vendor-recharts` (`recharts`)
+  - `vendor-motion` (`framer-motion`)
+  - `vendor-scanner` (`html5-qrcode`)
+  - `vendor-icons` (`lucide-react`)
+- O bundle inicial (`index.js`) caiu de 1.33MB para apenas ~260 kB (~81 kB gzipped).
+
+### 📋 Formatação Padrão de Types TypeScript
+Todos os tipos em `packages/shared-types/` e definições do frontend adotam organização vertical estrita:
+```ts
+export type Category = {
+  id: string,
+  name: string,
+  color: string,
+  icon: string,
+};
+```
+- 1 campo por linha.
+- 2 espaços de indentação.
+- Vírgula obrigatória em todas as propriedades (inclusive na última).
+- Sem comentários de cabeçalho do gerador (`ts-rs`).
+
+

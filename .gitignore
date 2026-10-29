@@ -24,5 +24,10 @@ Thumbs.db
 # Docker
 .docker/
 
+# SSL Certificates (mkcert)
+.certs/
+**/.certs/
+*.pem
+
 # Graphify (índice local do grafo de código)
 graphify-out/

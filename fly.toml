@@ -1,0 +1,39 @@
+# =============================================================================
+# Fly.io Configuration — Baixômetro API (Rust / Axum)
+# Para fazer deploy:
+# 1. fly launch --no-deploy
+# 2. fly secrets set DATABASE_URL="postgres://..." JWT_SECRET="$(openssl rand -base64 32)"
+# 3. fly deploy
+# =============================================================================
+
+app = "baixometro-api"
+primary_region = "gru"
+
+[build]
+  dockerfile = "infra/docker/Dockerfile.api.prod"
+
+[env]
+  PORT = "3000"
+  API_PORT = "3000"
+  RUST_LOG = "info,baixometro_api=info"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  memory = "1024mb" # Mínimo 1GB RAM para executar o Chromium Headless sem OOM
+  cpu_kind = "shared"
+  cpus = 1
+
