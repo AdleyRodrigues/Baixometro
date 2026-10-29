@@ -1,12 +1,8 @@
-import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   AlertCircle,
-  AlertTriangle,
-  ArrowUpRight,
   Calendar,
-  Check,
   CheckCircle2,
   FileUp,
   KeyRound,
@@ -16,13 +12,9 @@ import {
   QrCode,
   Sparkles,
   Store,
-  Trash2,
 } from 'lucide-react';
-import type { Category, Product, ReceiptDetail } from '@baixometro/shared-types';
-import { api, ApiError } from '../api';
 import QrScannerModal from '../components/QrScannerModal';
-import { Badge } from '../components/ui/badge';
-import { Button, buttonVariants } from '../components/ui/button';
+import { Button } from '../components/ui/button';
 import {
   Card,
   CardContent,
@@ -30,436 +22,50 @@ import {
   CardHeader,
   CardTitle,
 } from '../components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '../components/ui/dialog';
 import { Input } from '../components/ui/input';
-import { Select } from '../components/ui/select';
-import { formatCurrency, formatDate } from '../format';
-import { cn } from '../lib/utils';
-
-const SAMPLE_CEARA_NFCE_XML = `<?xml version="1.0" encoding="UTF-8"?>
-<nfeProc versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe">
-  <NFe xmlns="http://www.portalfiscal.inf.br/nfe">
-    <infNFe Id="NFe23261007123456000188650010000456781000456789" versao="4.00">
-      <ide>
-        <cUF>23</cUF>
-        <mod>65</mod>
-        <dhEmi>2026-10-28T18:30:00-03:00</dhEmi>
-      </ide>
-      <emit>
-        <CNPJ>07123456000188</CNPJ>
-        <xNome>MERCADINHO SAO LUIZ LTDA</xNome>
-        <xFant>Supermercado São Luiz</xFant>
-      </emit>
-      <det nItem="1">
-        <prod>
-          <cProd>101</cProd>
-          <cEAN>7891000100103</cEAN>
-          <xProd>Café Torrado e Moído 500g</xProd>
-          <uCom>UN</uCom>
-          <qCom>2.0000</qCom>
-          <vUnCom>19.9000</vUnCom>
-          <vProd>39.80</vProd>
-        </prod>
-      </det>
-      <det nItem="2">
-        <prod>
-          <cProd>202</cProd>
-          <cEAN>SEM GTIN</cEAN>
-          <xProd>Queijo Coalho Regional</xProd>
-          <uCom>KG</uCom>
-          <qCom>0.6500</qCom>
-          <vUnCom>44.9000</vUnCom>
-          <vProd>29.19</vProd>
-        </prod>
-      </det>
-    </infNFe>
-  </NFe>
-</nfeProc>`;
-
-interface DraftItem {
-  key: number;
-  description: string;
-  quantity: string;
-  unit: string;
-  unit_price: string;
-  category_id: string;
-  product_id: string;
-  gtin?: string;
-}
-
-function todayLocalISO(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function isoToLocalDate(isoString: string): string {
-  const d = new Date(isoString);
-  if (Number.isNaN(d.getTime())) return todayLocalISO();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
+import { formatCurrency } from '../format';
+import { DuplicateReceiptAlertModal } from '../features/receipts/components/DuplicateReceiptAlertModal';
+import { ReceiptItemRow } from '../features/receipts/components/ReceiptItemRow';
+import { useNewReceipt } from '../features/receipts/hooks/useNewReceipt';
 
 export default function NewReceiptPage() {
-  const navigate = useNavigate();
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [storeName, setStoreName] = useState('');
-  const [storeCnpj, setStoreCnpj] = useState<string | undefined>(undefined);
-  const [accessKey, setAccessKey] = useState<string | undefined>(undefined);
-  const [issuedDate, setIssuedDate] = useState(todayLocalISO);
-  const [items, setItems] = useState<DraftItem[]>([
-    {
-      key: 1,
-      description: '',
-      quantity: '1',
-      unit: 'UN',
-      unit_price: '',
-      category_id: '',
-      product_id: '',
-    },
-  ]);
-  const [nextKey, setNextKey] = useState(2);
-  const [submitting, setSubmitting] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [scannerOpen, setScannerOpen] = useState(false);
-  const [importedBanner, setImportedBanner] = useState<string | null>(null);
-  const [isReviewingFreshImport, setIsReviewingFreshImport] = useState(false);
-  const [duplicateReceipt, setDuplicateReceipt] = useState<ReceiptDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [suggestXmlFallback, setSuggestXmlFallback] = useState(false);
-  const xmlInputRef = useRef<HTMLInputElement | null>(null);
-
-  const handleDuplicateConflict = useCallback(async (err: ApiError) => {
-    setScannerOpen(false);
-    setError(null);
-    setSuggestXmlFallback(false);
-
-    if (err.existingReceipt) {
-      setDuplicateReceipt(err.existingReceipt);
-      return;
-    }
-    if (err.existingReceiptId) {
-      try {
-        const fetched = await api.getReceipt(err.existingReceiptId);
-        setDuplicateReceipt(fetched);
-        return;
-      } catch {
-        // fallback para mensagem de erro caso falhe o fetch
-      }
-    }
-    setError(err.message);
-  }, []);
-
-  useEffect(() => {
-    api
-      .getCategories()
-      .then(setCategories)
-      .catch(() => {});
-    api
-      .getProducts()
-      .then(setProducts)
-      .catch(() => {});
-  }, []);
-
-  const populateFromImported = useCallback(
-    (detail: ReceiptDetail, availableProducts: Product[]) => {
-      setStoreName(detail.store.name);
-      setStoreCnpj(detail.store.cnpj ?? undefined);
-      setAccessKey(detail.access_key ?? undefined);
-      setIssuedDate(isoToLocalDate(detail.issued_at));
-
-      const mapped: DraftItem[] = detail.items.map((item, index) => {
-        const matchedProduct = availableProducts.find(
-          (p) =>
-            (item.gtin && p.gtin === item.gtin) ||
-            p.name.toLowerCase() === item.description.trim().toLowerCase(),
-        );
-        return {
-          key: index + 1,
-          description: item.description,
-          quantity: String(item.quantity),
-          unit: item.unit || 'UN',
-          unit_price: String(item.unit_price),
-          category_id: item.category_id ?? '',
-          product_id: matchedProduct?.id ?? '',
-          gtin: item.gtin ?? undefined,
-        };
-      });
-
-      setItems(
-        mapped.length > 0
-          ? mapped
-          : [
-              {
-                key: 1,
-                description: '',
-                quantity: '1',
-                unit: 'UN',
-                unit_price: '',
-                category_id: '',
-                product_id: '',
-              },
-            ],
-      );
-      setNextKey(mapped.length + 1);
-      setIsReviewingFreshImport(true);
-      setSuggestXmlFallback(false);
-      setImportedBanner(
-        'Nota importada com sucesso! Revise os itens, produtos e categorias abaixo e clique em Salvar Nota.',
-      );
-    },
-    [],
-  );
-
-  const handleQrDetected = useCallback(
-    async (detectedKey: string, qrUrl?: string) => {
-      setScannerOpen(false);
-      setImporting(true);
-      setError(null);
-      setSuggestXmlFallback(false);
-      setImportedBanner(null);
-
-      try {
-        const importedDetail = await api.importReceipt({
-          access_key: detectedKey,
-          qr_url: qrUrl,
-        });
-        const latestProducts = await api.getProducts().catch(() => products);
-        setProducts(latestProducts);
-        populateFromImported(importedDetail, latestProducts);
-        navigate('/receipts/new', { replace: true });
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 409) {
-          await handleDuplicateConflict(err);
-          return;
-        }
-        setError(
-          err instanceof Error
-            ? err.message
-            : 'Falha ao consultar a NFC-e no portal da SEFAZ.',
-        );
-        setSuggestXmlFallback(true);
-      } finally {
-        setImporting(false);
-      }
-    },
-    [handleDuplicateConflict, navigate, populateFromImported, products],
-  );
-
-  const importXmlFileObject = useCallback(
-    async (file: File) => {
-      setImporting(true);
-      setError(null);
-      setSuggestXmlFallback(false);
-      setImportedBanner(null);
-
-      try {
-        const importedDetail = await api.importReceiptXml(file);
-        const latestProducts = await api.getProducts().catch(() => products);
-        setProducts(latestProducts);
-        populateFromImported(importedDetail, latestProducts);
-        navigate('/receipts/new', { replace: true });
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 409) {
-          await handleDuplicateConflict(err);
-          return;
-        }
-        setError(err instanceof Error ? err.message : 'Falha ao importar o arquivo XML da nota.');
-      } finally {
-        setImporting(false);
-      }
-    },
-    [handleDuplicateConflict, navigate, populateFromImported, products],
-  );
-
-  const handleXmlFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    importXmlFileObject(file).catch(() => {});
-    e.target.value = '';
-  };
-
-  const handleSampleXmlImport = () => {
-    const sampleFile = new File([SAMPLE_CEARA_NFCE_XML], 'nfce-ceara-exemplo.xml', {
-      type: 'application/xml',
-    });
-    importXmlFileObject(sampleFile).catch(() => {});
-  };
-
-  const addItem = () => {
-    setItems((prev) => [
-      ...prev,
-      {
-        key: nextKey,
-        description: '',
-        quantity: '1',
-        unit: 'UN',
-        unit_price: '',
-        category_id: '',
-        product_id: '',
-      },
-    ]);
-    setNextKey((k) => k + 1);
-  };
-
-  const removeItem = (key: number) => {
-    setItems((prev) => (prev.length > 1 ? prev.filter((item) => item.key !== key) : prev));
-  };
-
-  const updateItem = (
-    key: number,
-    field: keyof Omit<DraftItem, 'key' | 'gtin'>,
-    value: string,
-  ) => {
-    setItems((prev) =>
-      prev.map((item) => (item.key === key ? { ...item, [field]: value } : item)),
-    );
-  };
-
-  const previewTotal = items.reduce((acc, item) => {
-    const qty = Number.parseFloat(item.quantity.replace(',', '.'));
-    const price = Number.parseFloat(item.unit_price.replace(',', '.'));
-    if (Number.isFinite(qty) && Number.isFinite(price) && qty > 0 && price >= 0) {
-      return acc + qty * price;
-    }
-    return acc;
-  }, 0);
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    const parsedItems = items.map((item, idx) => {
-      const quantity = Number.parseFloat(item.quantity.replace(',', '.'));
-      const unit_price = Number.parseFloat(item.unit_price.replace(',', '.'));
-
-      if (!item.description.trim()) {
-        throw new Error(`Informe a descrição do item #${idx + 1}`);
-      }
-      if (!Number.isFinite(quantity) || quantity <= 0) {
-        throw new Error(`Quantidade inválida no item #${idx + 1}`);
-      }
-      if (!Number.isFinite(unit_price) || unit_price < 0) {
-        throw new Error(`Preço unitário inválido no item #${idx + 1}`);
-      }
-
-      return {
-        description: item.description.trim(),
-        quantity,
-        unit: item.unit || 'UN',
-        unit_price,
-        category_id: item.category_id ? item.category_id : undefined,
-        product_id: item.product_id ? item.product_id : undefined,
-        gtin: item.gtin,
-      };
-    });
-
-    setSubmitting(true);
-    try {
-      const issuedAtIso = new Date(`${issuedDate}T12:00:00`).toISOString();
-      await api.createReceipt({
-        store_name: storeName.trim(),
-        store_cnpj: storeCnpj,
-        access_key: accessKey,
-        replace_existing: isReviewingFreshImport ? true : undefined,
-        issued_at: issuedAtIso,
-        items: parsedItems,
-      });
-      navigate('/receipts');
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        await handleDuplicateConflict(err);
-        return;
-      }
-      setError(err instanceof Error ? err.message : 'Erro ao salvar a nota');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleFormSubmit = (e: FormEvent) => {
-    handleSubmit(e).catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : 'Erro de validação');
-    });
-  };
+  const {
+    xmlInputRef,
+    storeName,
+    setStoreName,
+    accessKey,
+    issuedDate,
+    setIssuedDate,
+    items,
+    categories,
+    products,
+    scannerOpen,
+    setScannerOpen,
+    importing,
+    submitting,
+    error,
+    suggestXmlFallback,
+    importedBanner,
+    duplicateModalOpen,
+    setDuplicateModalOpen,
+    duplicateReceipt,
+    addItem,
+    removeItem,
+    updateItem,
+    previewTotal,
+    handleQrDetected,
+    handleXmlFileChange,
+    handleSampleXmlImport,
+    handleFormSubmit,
+  } = useNewReceipt();
 
   return (
     <>
-      {/* Modal de Alerta: Nota já registrada (HTTP 409) */}
-      <Dialog
-        open={Boolean(duplicateReceipt)}
-        onOpenChange={(open) => {
-          if (!open) setDuplicateReceipt(null);
-        }}
-      >
-        <DialogContent onClose={() => setDuplicateReceipt(null)}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-amber-400">
-              <AlertTriangle className="h-5 w-5" />
-              <span>Nota já registrada</span>
-            </DialogTitle>
-            <DialogDescription>
-              Esta nota fiscal (NFC-e) já foi cadastrada anteriormente no seu histórico.
-            </DialogDescription>
-          </DialogHeader>
-
-          {duplicateReceipt && (
-            <div className="space-y-2.5 rounded-xl border border-[#27272a] bg-[#09090b] p-4 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Mercado:</span>
-                <strong className="text-sm text-zinc-100">{duplicateReceipt.store.name}</strong>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Data de emissão:</span>
-                <span className="font-medium text-zinc-200">
-                  {formatDate(duplicateReceipt.issued_at)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Total da nota:</span>
-                <strong className="text-base text-[#10b981]">
-                  {formatCurrency(duplicateReceipt.total_amount)}
-                </strong>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Itens registrados:</span>
-                <span className="text-zinc-300">{duplicateReceipt.items.length} itens</span>
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setDuplicateReceipt(null)}
-            >
-              Fechar
-            </Button>
-            {duplicateReceipt && (
-              <Link
-                to={`/receipts/${duplicateReceipt.id}`}
-                className={cn(buttonVariants({ variant: 'default' }))}
-              >
-                <span>Ver Nota Existente</span>
-                <ArrowUpRight className="h-4 w-4" />
-              </Link>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DuplicateReceiptAlertModal
+        open={duplicateModalOpen}
+        duplicateReceipt={duplicateReceipt}
+        onClose={() => setDuplicateModalOpen(false)}
+      />
 
       <QrScannerModal
         open={scannerOpen}
@@ -523,6 +129,16 @@ export default function NewReceiptPage() {
             >
               <FileUp className="h-4 w-4 text-[#10b981]" />
               <span>Importar XML da Nota</span>
+            </Button>
+
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleSampleXmlImport}
+              disabled={importing}
+            >
+              <Sparkles className="h-4 w-4 text-[#10b981]" />
+              <span>Testar XML Exemplo</span>
             </Button>
           </div>
         </div>
@@ -655,187 +271,52 @@ export default function NewReceiptPage() {
 
           <CardContent className="space-y-3.5">
             {items.map((item, idx) => (
-              <div
+              <ReceiptItemRow
                 key={item.key}
-                className="space-y-3 rounded-xl border border-[#27272a] bg-[#09090b]/70 p-4"
-              >
-                <div className="flex items-center justify-between">
-                  <Badge variant="secondary" className="font-mono text-[11px]">
-                    ITEM #{idx + 1}
-                  </Badge>
-                  {items.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => removeItem(item.key)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      <span>Remover</span>
-                    </Button>
-                  )}
-                </div>
-
-                <div className="space-y-1.5">
-                  <label
-                    className="block text-xs font-medium text-zinc-300"
-                    htmlFor={`item-desc-${item.key}`}
-                  >
-                    Descrição do Produto *
-                  </label>
-                  <Input
-                    id={`item-desc-${item.key}`}
-                    name={`item-desc-${item.key}`}
-                    type="text"
-                    placeholder="Ex.: Arroz Branco Tipo 1 5kg"
-                    value={item.description}
-                    onChange={(e) => updateItem(item.key, 'description', e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="space-y-1.5">
-                    <label
-                      className="block text-xs font-medium text-zinc-300"
-                      htmlFor={`item-price-${item.key}`}
-                    >
-                      Preço Unitário (R$) *
-                    </label>
-                    <Input
-                      id={`item-price-${item.key}`}
-                      name={`item-price-${item.key}`}
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="0,00"
-                      value={item.unit_price}
-                      onChange={(e) => updateItem(item.key, 'unit_price', e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label
-                      className="block text-xs font-medium text-zinc-300"
-                      htmlFor={`item-qty-${item.key}`}
-                    >
-                      Quantidade *
-                    </label>
-                    <Input
-                      id={`item-qty-${item.key}`}
-                      name={`item-qty-${item.key}`}
-                      type="number"
-                      step="0.001"
-                      min="0.001"
-                      value={item.quantity}
-                      onChange={(e) => updateItem(item.key, 'quantity', e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label
-                      className="block text-xs font-medium text-zinc-300"
-                      htmlFor={`item-unit-${item.key}`}
-                    >
-                      Unidade
-                    </label>
-                    <Select
-                      id={`item-unit-${item.key}`}
-                      name={`item-unit-${item.key}`}
-                      wrapperClassName="w-full"
-                      value={item.unit}
-                      onChange={(e) => updateItem(item.key, 'unit', e.target.value)}
-                    >
-                      <option value="UN">UN (Unidade)</option>
-                      <option value="KG">KG (Quilo)</option>
-                      <option value="L">L (Litro)</option>
-                      <option value="CX">CX (Caixa)</option>
-                      <option value="PCT">PCT (Pacote)</option>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <label
-                      className="block text-xs font-medium text-zinc-300"
-                      htmlFor={`item-cat-${item.key}`}
-                    >
-                      Categoria
-                    </label>
-                    <Select
-                      id={`item-cat-${item.key}`}
-                      name={`item-cat-${item.key}`}
-                      wrapperClassName="w-full"
-                      value={item.category_id}
-                      onChange={(e) => updateItem(item.key, 'category_id', e.target.value)}
-                    >
-                      <option value="">Sem categoria</option>
-                      {categories.map((cat) => (
-                        <option key={cat.id} value={cat.id}>
-                          {cat.icon} {cat.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label
-                      className="block text-xs font-medium text-zinc-300"
-                      htmlFor={`item-prod-${item.key}`}
-                    >
-                      Produto Canônico (Histórico de Preços)
-                    </label>
-                    <Select
-                      id={`item-prod-${item.key}`}
-                      name={`item-prod-${item.key}`}
-                      wrapperClassName="w-full"
-                      value={item.product_id}
-                      onChange={(e) => updateItem(item.key, 'product_id', e.target.value)}
-                    >
-                      <option value="">
-                        ✨ Criar novo ou vincular automaticamente por GTIN
-                      </option>
-                      {products.map((prod) => (
-                        <option key={prod.id} value={prod.id}>
-                          📦 {prod.name} {prod.gtin ? `(${prod.gtin})` : ''}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                </div>
-              </div>
+                item={item}
+                index={idx}
+                totalItems={items.length}
+                categories={categories}
+                products={products}
+                onUpdate={updateItem}
+                onRemove={removeItem}
+              />
             ))}
           </CardContent>
         </Card>
 
-        {/* Card 3: Rodapé com Total Estimado e Botão Salvar */}
-        <Card className="border-[#10b981]/35 bg-gradient-to-r from-[#10b981]/10 via-[#121215] to-[#121215]">
-          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+        {/* Card 3: Total & Salvar */}
+        <Card className="border-[#10b981]/30 bg-gradient-to-br from-[#10b981]/5 via-[#121215] to-[#121215]">
+          <CardContent className="flex flex-col items-stretch justify-between gap-4 p-4 sm:flex-row sm:items-center">
             <div>
-              <div className="text-xs font-medium uppercase tracking-wider text-zinc-400">
-                Total Estimado da Nota
-              </div>
+              <span className="text-xs text-zinc-400">Valor Total Calculado</span>
               <div className="text-2xl font-bold tracking-tight text-[#10b981]">
                 {formatCurrency(previewTotal)}
               </div>
+              <span className="text-[11px] text-zinc-500">
+                {items.length} {items.length === 1 ? 'item' : 'itens'} na nota
+              </span>
             </div>
 
-            <Button type="submit" size="lg" disabled={submitting} className="w-full sm:w-auto">
-              {submitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Salvando...</span>
-                </>
-              ) : (
-                <>
-                  <Check className="h-4 w-4 stroke-[2.5]" />
+            <div className="flex gap-2.5">
+              <Link
+                to="/receipts"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-[#27272a] bg-[#18181b] px-4 text-sm font-medium text-zinc-300 hover:bg-zinc-800"
+              >
+                Cancelar
+              </Link>
+
+              <Button type="submit" disabled={submitting}>
+                {submitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin text-zinc-950" />
+                    <span>Salvando...</span>
+                  </>
+                ) : (
                   <span>Salvar Nota Fiscal</span>
-                </>
-              )}
-            </Button>
+                )}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </motion.form>

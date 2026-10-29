@@ -9,7 +9,8 @@
     "build": "pnpm --filter @baixometro/web build",
     "build:web": "pnpm --filter @baixometro/web build",
     "lint:web": "pnpm --filter @baixometro/web lint",
-    "lint": "pnpm --filter @baixometro/web lint"
+    "lint": "pnpm --filter @baixometro/web lint",
+    "format:types": "node scripts/format-shared-types.cjs"
   },
   "packageManager": "pnpm@11.5.1"
 }

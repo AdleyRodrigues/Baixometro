@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import {
   BrowserRouter,
   Link,
@@ -11,26 +11,39 @@ import {
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard,
+  Loader2,
   PlusCircle,
   ReceiptText,
   Settings,
   TrendingDown,
+  UserPlus,
 } from 'lucide-react';
 import type { HealthResponse } from '@baixometro/shared-types';
 import { api } from './api';
+import AuthModal from './components/AuthModal';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Badge } from './components/ui/badge';
+import { Button } from './components/ui/button';
 import { cn } from './lib/utils';
-import DashboardPage from './pages/DashboardPage';
-import LoginPage from './pages/LoginPage';
-import ReceiptsPage from './pages/ReceiptsPage';
-import ReceiptDetailPage from './pages/ReceiptDetailPage';
-import NewReceiptPage from './pages/NewReceiptPage';
-import ProductHistoryPage from './pages/ProductHistoryPage';
-import SettingsPage from './pages/SettingsPage';
-import SettingsCategoriesPage from './pages/SettingsCategoriesPage';
-import SettingsProductsPage from './pages/SettingsProductsPage';
-import SettingsSupportPage from './pages/SettingsSupportPage';
+
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const ReceiptsPage = lazy(() => import('./pages/ReceiptsPage'));
+const ReceiptDetailPage = lazy(() => import('./pages/ReceiptDetailPage'));
+const NewReceiptPage = lazy(() => import('./pages/NewReceiptPage'));
+const ProductHistoryPage = lazy(() => import('./pages/ProductHistoryPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const SettingsCategoriesPage = lazy(() => import('./pages/SettingsCategoriesPage'));
+const SettingsProductsPage = lazy(() => import('./pages/SettingsProductsPage'));
+const SettingsSupportPage = lazy(() => import('./pages/SettingsSupportPage'));
+
+function PageLoader() {
+  return (
+    <div className="flex h-64 items-center justify-center">
+      <Loader2 className="h-6 w-6 animate-spin text-[#10b981]" />
+    </div>
+  );
+}
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -39,19 +52,10 @@ const NAV_ITEMS = [
   { to: '/settings', label: 'Ajustes', icon: Settings, end: false },
 ];
 
-function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = useAuth();
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-  return <>{children}</>;
-}
-
 function BottomNav() {
   const { pathname } = useLocation();
-  const { isAuthenticated } = useAuth();
 
-  if (!isAuthenticated || pathname === '/login') {
+  if (pathname === '/login') {
     return null;
   }
 
@@ -110,7 +114,7 @@ function BottomNav() {
 
 function AppShell() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, openAuthModal } = useAuth();
 
   useEffect(() => {
     api
@@ -123,8 +127,10 @@ function AppShell() {
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 pt-4 pb-28 gap-5">
+      <AuthModal />
+
       <header className="sticky top-3 z-20 flex items-center justify-between rounded-xl border border-[#27272a] bg-[#121215]/90 px-4 py-3 backdrop-blur-md shadow-sm">
-        <Link to={isAuthenticated ? '/' : '/login'} className="flex items-center gap-2.5">
+        <Link to="/" className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#10b981]/15 border border-[#10b981]/30 text-[#10b981]">
             <TrendingDown className="h-4 w-4 stroke-[2.25]" />
           </div>
@@ -154,96 +160,46 @@ function AppShell() {
             <span>{isOnline ? 'API online' : 'API offline'}</span>
           </div>
 
-          {isAuthenticated && (
-            <Link
-              to="/settings"
-              aria-label="Configurações"
-              title="Configurações de Categorias e Produtos"
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#27272a] bg-[#09090b] text-zinc-400 transition-colors hover:border-[#10b981]/40 hover:text-[#10b981]"
+          {!isAuthenticated && (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => openAuthModal({ defaultTab: 'register' })}
+              className="h-8 px-2.5 text-xs"
             >
-              <Settings className="h-4 w-4" />
-            </Link>
+              <UserPlus className="h-3.5 w-3.5 text-[#10b981]" />
+              <span className="hidden sm:inline">Entrar</span>
+            </Button>
           )}
+
+          <Link
+            to="/settings"
+            aria-label="Configurações"
+            title="Configurações de Categorias e Produtos"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#27272a] bg-[#09090b] text-zinc-400 transition-colors hover:border-[#10b981]/40 hover:text-[#10b981]"
+          >
+            <Settings className="h-4 w-4" />
+          </Link>
         </div>
       </header>
 
       <main className="flex-1">
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <DashboardPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/receipts"
-            element={
-              <ProtectedRoute>
-                <ReceiptsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/receipts/new"
-            element={
-              <ProtectedRoute>
-                <NewReceiptPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/receipts/:id"
-            element={
-              <ProtectedRoute>
-                <ReceiptDetailPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/products/:id"
-            element={
-              <ProtectedRoute>
-                <ProductHistoryPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/settings"
-            element={
-              <ProtectedRoute>
-                <SettingsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/settings/categories"
-            element={
-              <ProtectedRoute>
-                <SettingsCategoriesPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/settings/products"
-            element={
-              <ProtectedRoute>
-                <SettingsProductsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/settings/support"
-            element={
-              <ProtectedRoute>
-                <SettingsSupportPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/receipts" element={<ReceiptsPage />} />
+            <Route path="/receipts/new" element={<NewReceiptPage />} />
+            <Route path="/receipts/:id" element={<ReceiptDetailPage />} />
+            <Route path="/products/:id" element={<ProductHistoryPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/settings/categories" element={<SettingsCategoriesPage />} />
+            <Route path="/settings/products" element={<SettingsProductsPage />} />
+            <Route path="/settings/support" element={<SettingsSupportPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </main>
 
       <BottomNav />

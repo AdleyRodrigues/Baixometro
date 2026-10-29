@@ -2,10 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  AlertCircle,
   ArrowLeft,
-  Check,
-  Loader2,
   Pencil,
   Plus,
   Tags,
@@ -16,29 +13,9 @@ import { api } from '../api';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '../components/ui/dialog';
-import { Input } from '../components/ui/input';
 import { Skeleton } from '../components/ui/skeleton';
-
-const PRESET_COLORS = [
-  '#10b981',
-  '#3b82f6',
-  '#f59e0b',
-  '#ef4444',
-  '#a855f7',
-  '#ec4899',
-  '#06b6d4',
-  '#84cc16',
-];
-
-const PRESET_ICONS = ['🛒', '🥫', '🥦', '🥩', '🧀', '🥖', '🧴', '🧼', '🍺', '🐾'];
+import { CategoryFormModal } from '../features/categories/components/CategoryFormModal';
+import { DeleteCategoryModal } from '../features/categories/components/DeleteCategoryModal';
 
 export default function SettingsCategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -72,7 +49,7 @@ export default function SettingsCategoriesPage() {
   };
 
   useEffect(() => {
-    loadCategories().catch(() => {});
+    loadCategories();
   }, []);
 
   const openCreateModal = () => {
@@ -87,16 +64,17 @@ export default function SettingsCategoriesPage() {
   const openEditModal = (cat: Category) => {
     setEditingCategory(cat);
     setName(cat.name);
-    setColor(cat.color || '#10b981');
-    setIcon(cat.icon || '🛒');
+    setColor(cat.color);
+    setIcon(cat.icon);
     setModalError(null);
     setDialogOpen(true);
   };
 
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      setModalError('Informe o nome da categoria.');
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setModalError('O nome da categoria é obrigatório');
       return;
     }
 
@@ -105,15 +83,15 @@ export default function SettingsCategoriesPage() {
     try {
       if (editingCategory) {
         await api.updateCategory(editingCategory.id, {
-          name: name.trim(),
+          name: trimmed,
           color,
-          icon: icon.trim() || '🛒',
+          icon,
         });
       } else {
         await api.createCategory({
-          name: name.trim(),
+          name: trimmed,
           color,
-          icon: icon.trim() || '🛒',
+          icon,
         });
       }
       setDialogOpen(false);
@@ -133,8 +111,7 @@ export default function SettingsCategoriesPage() {
       setDeletingCategory(null);
       await loadCategories();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao excluir categoria');
-      setDeletingCategory(null);
+      alert(err instanceof Error ? err.message : 'Falha ao excluir categoria');
     } finally {
       setDeleting(false);
     }
@@ -142,172 +119,27 @@ export default function SettingsCategoriesPage() {
 
   return (
     <>
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent onClose={() => setDialogOpen(false)}>
-          <DialogHeader>
-            <DialogTitle>
-              {editingCategory ? 'Editar Categoria' : 'Nova Categoria'}
-            </DialogTitle>
-            <DialogDescription>
-              Escolha o nome, o ícone e a cor de identificação para os itens das notas
-            </DialogDescription>
-          </DialogHeader>
+      <CategoryFormModal
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        editingCategory={editingCategory}
+        name={name}
+        setName={setName}
+        color={color}
+        setColor={setColor}
+        icon={icon}
+        setIcon={setIcon}
+        saving={saving}
+        modalError={modalError}
+        onSubmit={handleSave}
+      />
 
-          <form onSubmit={handleSave} className="space-y-4">
-            {modalError && (
-              <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
-                <span>{modalError}</span>
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <label htmlFor="cat-name" className="block text-xs font-medium text-zinc-300">
-                Nome da Categoria *
-              </label>
-              <Input
-                id="cat-name"
-                type="text"
-                placeholder="Ex.: Laticínios, Padaria, Limpeza..."
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label htmlFor="cat-icon" className="block text-xs font-medium text-zinc-300">
-                Ícone (Emoji)
-              </label>
-              <div className="flex flex-wrap gap-1.5 pb-1">
-                {PRESET_ICONS.map((emoji) => (
-                  <button
-                    key={emoji}
-                    type="button"
-                    onClick={() => setIcon(emoji)}
-                    className={`flex h-9 w-9 items-center justify-center rounded-lg border text-base transition-colors ${
-                      icon === emoji
-                        ? 'border-[#10b981] bg-[#10b981]/15'
-                        : 'border-[#27272a] bg-[#09090b] hover:bg-zinc-800'
-                    }`}
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-              <Input
-                id="cat-icon"
-                type="text"
-                value={icon}
-                onChange={(e) => setIcon(e.target.value)}
-                maxLength={4}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label htmlFor="cat-color" className="block text-xs font-medium text-zinc-300">
-                Cor de Destaque
-              </label>
-              <div className="flex flex-wrap items-center gap-2">
-                {PRESET_COLORS.map((hex) => (
-                  <button
-                    key={hex}
-                    type="button"
-                    onClick={() => setColor(hex)}
-                    aria-label={`Cor ${hex}`}
-                    className={`h-8 w-8 rounded-full border-2 transition-transform ${
-                      color.toLowerCase() === hex.toLowerCase()
-                        ? 'scale-110 border-white'
-                        : 'border-transparent opacity-80 hover:opacity-100'
-                    }`}
-                    style={{ backgroundColor: hex }}
-                  />
-                ))}
-                <input
-                  id="cat-color"
-                  type="color"
-                  value={color}
-                  onChange={(e) => setColor(e.target.value)}
-                  className="h-9 w-12 cursor-pointer rounded-md border border-[#27272a] bg-[#09090b] p-0.5"
-                />
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => setDialogOpen(false)}
-                disabled={saving}
-              >
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Salvando...</span>
-                  </>
-                ) : (
-                  <>
-                    <Check className="h-4 w-4" />
-                    <span>{editingCategory ? 'Salvar Alterações' : 'Criar Categoria'}</span>
-                  </>
-                )}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal de Confirmação de Exclusão */}
-      <Dialog
-        open={Boolean(deletingCategory)}
-        onOpenChange={(open) => {
-          if (!open) setDeletingCategory(null);
-        }}
-      >
-        <DialogContent onClose={() => setDeletingCategory(null)}>
-          <DialogHeader>
-            <DialogTitle>Excluir Categoria</DialogTitle>
-            <DialogDescription>
-              Tem certeza que deseja excluir a categoria{' '}
-              <strong className="text-zinc-200">
-                {deletingCategory?.icon} {deletingCategory?.name}
-              </strong>
-              ? Os itens das notas fiscais vinculados ficarão como "Sem categoria".
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setDeletingCategory(null)}
-              disabled={deleting}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={handleConfirmDelete}
-              disabled={deleting}
-            >
-              {deleting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Excluindo...</span>
-                </>
-              ) : (
-                <>
-                  <Trash2 className="h-4 w-4" />
-                  <span>Confirmar Exclusão</span>
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteCategoryModal
+        category={deletingCategory}
+        onClose={() => setDeletingCategory(null)}
+        deleting={deleting}
+        onConfirm={handleConfirmDelete}
+      />
 
       <motion.div
         initial={{ opacity: 0, y: 12 }}
@@ -418,4 +250,3 @@ export default function SettingsCategoriesPage() {
     </>
   );
 }
-

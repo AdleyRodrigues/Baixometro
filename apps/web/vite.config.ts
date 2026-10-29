@@ -1,6 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
-import basicSsl from '@vitejs/plugin-basic-ssl';
+import mkcert from 'vite-plugin-mkcert';
 import { VitePWA } from 'vite-plugin-pwa';
 
 const MANIFEST = {
@@ -57,7 +59,7 @@ interface MiddlewareReq {
 interface MiddlewareRes {
   statusCode: number;
   setHeader: (name: string, value: string) => void;
-  end: (body?: string) => void;
+  end: (body?: string | Buffer | Uint8Array) => void;
 }
 
 function dualHttpHttpsAndSwCleanupPlugin(): Plugin {
@@ -153,6 +155,17 @@ function dualHttpHttpsAndSwCleanupPlugin(): Plugin {
         const mRes = res as unknown as MiddlewareRes;
         const url = mReq.url?.split('?')[0] ?? '';
 
+        if (url === '/rootCA.pem' || url === '/rootCA.crt') {
+          const certFile = path.resolve(process.cwd(), '.certs', 'rootCA.pem');
+          if (fs.existsSync(certFile)) {
+            mRes.statusCode = 200;
+            mRes.setHeader('Content-Type', 'application/x-x509-ca-cert');
+            mRes.setHeader('Content-Disposition', 'attachment; filename="rootCA.crt"');
+            mRes.end(fs.readFileSync(certFile));
+            return;
+          }
+        }
+
         if (url === '/manifest.webmanifest') {
           mRes.statusCode = 200;
           mRes.setHeader('Content-Type', 'application/manifest+json');
@@ -216,7 +229,10 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       react(),
-      basicSsl(),
+      mkcert({
+        savePath: './.certs',
+        hosts: ['localhost', '127.0.0.1'],
+      }),
       dualHttpHttpsAndSwCleanupPlugin(),
       VitePWA({
         registerType: 'autoUpdate',
@@ -227,6 +243,20 @@ export default defineConfig(({ mode }) => {
         manifest: MANIFEST,
       }),
     ],
+    build: {
+      chunkSizeWarningLimit: 600,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+            'vendor-recharts': ['recharts'],
+            'vendor-motion': ['framer-motion'],
+            'vendor-scanner': ['html5-qrcode'],
+            'vendor-icons': ['lucide-react'],
+          },
+        },
+      },
+    },
     server: {
       host: true,
       port: 5173,
