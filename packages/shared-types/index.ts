@@ -5,6 +5,7 @@ export * from './CreateCategory';
 export * from './CreateReceipt';
 export * from './CreateReceiptItem';
 export * from './DashboardSummary';
+export * from './ErrorDetail';
 export * from './ErrorResponse';
 export * from './HealthResponse';
 export * from './ImportedItem';

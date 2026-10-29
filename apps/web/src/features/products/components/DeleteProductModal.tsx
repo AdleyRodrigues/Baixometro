@@ -1,4 +1,4 @@
-import { Loader2, Trash2 } from 'lucide-react';
+import { AlertCircle, Loader2, Trash2 } from 'lucide-react';
 import type { Product } from '@baixometro/shared-types';
 import { Button } from '../../../components/ui/button';
 import {
@@ -14,6 +14,7 @@ type DeleteProductModalProps = {
   product: Product | null,
   onClose: () => void,
   deleting: boolean,
+  error?: string | null,
   onConfirm: () => void,
 };
 
@@ -21,6 +22,7 @@ export function DeleteProductModal({
   product,
   onClose,
   deleting,
+  error,
   onConfirm,
 }: DeleteProductModalProps) {
   return (
@@ -39,6 +41,14 @@ export function DeleteProductModal({
             possui observações de preço registradas.
           </DialogDescription>
         </DialogHeader>
+
+        {error && (
+          <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+            <span>{error}</span>
+          </div>
+        )}
+
         <DialogFooter>
           <Button
             type="button"

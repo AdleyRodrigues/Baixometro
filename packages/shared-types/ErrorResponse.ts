@@ -1,3 +1,4 @@
+import type { ErrorDetail } from "./ErrorDetail";
 import type { ReceiptDetail } from "./ReceiptDetail";
 
 /**
@@ -5,7 +6,7 @@ import type { ReceiptDetail } from "./ReceiptDetail";
  */
 
 export type ErrorResponse = {
-  error: string,
+  error: ErrorDetail,
   existing_receipt_id?: string,
   existing_receipt?: ReceiptDetail,
 };

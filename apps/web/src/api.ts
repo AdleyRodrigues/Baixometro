@@ -4,7 +4,6 @@ import type {
   CreateCategory,
   CreateReceipt,
   DashboardSummary,
-  ErrorResponse,
   HealthResponse,
   ImportedReceipt,
   ImportReceiptRequest,
@@ -27,25 +26,38 @@ import {
   AUTH_USER_KEY,
   UNAUTHORIZED_EVENT,
 } from './context/AuthContext';
+import { getErrorMessage } from './lib/errorMessages';
 
 export type DashboardPeriod = 'month' | '3m' | 'year';
 
 export class ApiError extends Error {
   status: number;
+  code: string;
+  details?: string;
+  title: string;
+  action?: string;
   existingReceiptId?: string;
   existingReceipt?: ReceiptDetail;
 
   constructor(
     message: string,
     status: number,
+    code = 'UNKNOWN_ERROR',
+    details?: string,
     existingReceiptId?: string,
     existingReceipt?: ReceiptDetail,
   ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = code;
+    this.details = details;
     this.existingReceiptId = existingReceiptId;
     this.existingReceipt = existingReceipt;
+
+    const descriptor = getErrorMessage(code || message);
+    this.title = descriptor.title;
+    this.action = descriptor.action;
   }
 }
 
@@ -66,23 +78,56 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      ...headers,
-      ...((init?.headers as Record<string, string> | undefined) ?? {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...init,
+      headers: {
+        ...headers,
+        ...((init?.headers as Record<string, string> | undefined) ?? {}),
+      },
+    });
+  } catch (err: unknown) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      const desc = getErrorMessage('NETWORK_TIMEOUT');
+      throw new ApiError(
+        desc.message,
+        408,
+        'NETWORK_TIMEOUT',
+        'Tempo limite excedido na requisição',
+      );
+    }
+    const desc = getErrorMessage('NETWORK_DISCONNECTED');
+    throw new ApiError(
+      desc.message,
+      0,
+      'NETWORK_DISCONNECTED',
+      err instanceof Error ? err.message : String(err),
+    );
+  }
 
   if (!res.ok) {
     let message = `Erro HTTP ${res.status}`;
+    let code = 'UNKNOWN_ERROR';
+    let details: string | undefined;
     let existingReceiptId: string | undefined;
     let existingReceipt: ReceiptDetail | undefined;
 
     try {
-      const errBody = (await res.json()) as ErrorResponse;
+      const errBody = (await res.json()) as {
+        error?: string | { code?: string; message?: string; details?: string };
+        existing_receipt_id?: string;
+        existing_receipt?: ReceiptDetail;
+      };
+
       if (errBody?.error) {
-        message = errBody.error;
+        if (typeof errBody.error === 'string') {
+          message = errBody.error;
+        } else if (typeof errBody.error === 'object') {
+          code = errBody.error.code || code;
+          message = errBody.error.message || message;
+          details = errBody.error.details;
+        }
       }
       if (errBody?.existing_receipt_id) {
         existingReceiptId = errBody.existing_receipt_id;
@@ -91,7 +136,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         existingReceipt = errBody.existing_receipt;
       }
     } catch {
-      // ignora erro de parse
+      // ignora erro de parse se o corpo não for JSON
     }
 
     if (res.status === 401 && !path.startsWith('/auth/')) {
@@ -104,7 +149,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       }
     }
 
-    throw new ApiError(message, res.status, existingReceiptId, existingReceipt);
+    if (code === 'UNKNOWN_ERROR') {
+      if (res.status === 401) code = 'AUTH_UNAUTHORIZED';
+      else if (res.status === 404) code = 'NOT_FOUND';
+      else if (res.status === 409) code = 'CONFLICT';
+      else if (res.status === 422) code = 'UNPROCESSABLE_ENTITY';
+      else if (res.status >= 500) code = 'INTERNAL_SERVER_ERROR';
+    }
+
+    throw new ApiError(message, res.status, code, details, existingReceiptId, existingReceipt);
   }
 
   if (res.status === 204) {

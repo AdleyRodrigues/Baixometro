@@ -21,6 +21,7 @@ import {
 import type { HealthResponse } from '@baixometro/shared-types';
 import { api } from './api';
 import AuthModal from './components/AuthModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
@@ -209,10 +210,12 @@ function AppShell() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <AppShell />
-      </BrowserRouter>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <BrowserRouter>
+          <AppShell />
+        </BrowserRouter>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

@@ -22,6 +22,7 @@ import { Skeleton } from '../components/ui/skeleton';
 import { DeleteProductModal } from '../features/products/components/DeleteProductModal';
 import { EditProductModal } from '../features/products/components/EditProductModal';
 import { MergeProductModal } from '../features/products/components/MergeProductModal';
+import { getErrorMessage } from '../lib/errorMessages';
 
 export default function SettingsProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -47,6 +48,7 @@ export default function SettingsProductsPage() {
   // Modal de Exclusão (apenas quando observation_count === 0)
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const loadProducts = async () => {
     setLoading(true);
@@ -55,7 +57,8 @@ export default function SettingsProductsPage() {
       const data = await api.getProducts();
       setProducts(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao carregar produtos');
+      const errInfo = getErrorMessage(err);
+      setError(`${errInfo.message} ${errInfo.action || ''}`);
     } finally {
       setLoading(false);
     }
@@ -104,7 +107,8 @@ export default function SettingsProductsPage() {
       setEditingProduct(null);
       await loadProducts();
     } catch (err) {
-      setEditError(err instanceof Error ? err.message : 'Erro ao salvar alterações');
+      const errInfo = getErrorMessage(err);
+      setEditError(`${errInfo.message} ${errInfo.action || ''}`);
     } finally {
       setSavingEdit(false);
     }
@@ -138,7 +142,8 @@ export default function SettingsProductsPage() {
       setMergingSource(null);
       await loadProducts();
     } catch (err) {
-      setMergeError(err instanceof Error ? err.message : 'Falha ao mesclar produtos');
+      const errInfo = getErrorMessage(err);
+      setMergeError(`${errInfo.message} ${errInfo.action || ''}`);
     } finally {
       setMerging(false);
     }
@@ -147,13 +152,15 @@ export default function SettingsProductsPage() {
   const handleConfirmDelete = async () => {
     if (!deletingProduct) return;
     setDeleting(true);
+    setDeleteError(null);
     try {
       await api.deleteProduct(deletingProduct.id);
       setFeedback(`Produto "${deletingProduct.name}" excluído.`);
       setDeletingProduct(null);
       await loadProducts();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Falha ao excluir produto');
+      const errInfo = getErrorMessage(err);
+      setDeleteError(`${errInfo.message} ${errInfo.action || ''}`);
     } finally {
       setDeleting(false);
     }
@@ -191,8 +198,12 @@ export default function SettingsProductsPage() {
 
       <DeleteProductModal
         product={deletingProduct}
-        onClose={() => setDeletingProduct(null)}
+        onClose={() => {
+          setDeletingProduct(null);
+          setDeleteError(null);
+        }}
         deleting={deleting}
+        error={deleteError}
         onConfirm={handleConfirmDelete}
       />
 

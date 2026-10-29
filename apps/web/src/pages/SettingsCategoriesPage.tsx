@@ -16,6 +16,7 @@ import { Card, CardContent } from '../components/ui/card';
 import { Skeleton } from '../components/ui/skeleton';
 import { CategoryFormModal } from '../features/categories/components/CategoryFormModal';
 import { DeleteCategoryModal } from '../features/categories/components/DeleteCategoryModal';
+import { getErrorMessage } from '../lib/errorMessages';
 
 export default function SettingsCategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -34,6 +35,7 @@ export default function SettingsCategoriesPage() {
   // Modal de Confirmação de Exclusão
   const [deletingCategory, setDeletingCategory] = useState<Category | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const loadCategories = async () => {
     setLoading(true);
@@ -42,7 +44,8 @@ export default function SettingsCategoriesPage() {
       const data = await api.getCategories();
       setCategories(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao carregar categorias');
+      const errInfo = getErrorMessage(err);
+      setError(`${errInfo.message} ${errInfo.action || ''}`);
     } finally {
       setLoading(false);
     }
@@ -97,7 +100,8 @@ export default function SettingsCategoriesPage() {
       setDialogOpen(false);
       await loadCategories();
     } catch (err) {
-      setModalError(err instanceof Error ? err.message : 'Erro ao salvar categoria');
+      const errInfo = getErrorMessage(err);
+      setModalError(`${errInfo.message} ${errInfo.action || ''}`);
     } finally {
       setSaving(false);
     }
@@ -106,12 +110,14 @@ export default function SettingsCategoriesPage() {
   const handleConfirmDelete = async () => {
     if (!deletingCategory) return;
     setDeleting(true);
+    setDeleteError(null);
     try {
       await api.deleteCategory(deletingCategory.id);
       setDeletingCategory(null);
       await loadCategories();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Falha ao excluir categoria');
+      const errInfo = getErrorMessage(err);
+      setDeleteError(`${errInfo.message} ${errInfo.action || ''}`);
     } finally {
       setDeleting(false);
     }
@@ -136,8 +142,12 @@ export default function SettingsCategoriesPage() {
 
       <DeleteCategoryModal
         category={deletingCategory}
-        onClose={() => setDeletingCategory(null)}
+        onClose={() => {
+          setDeletingCategory(null);
+          setDeleteError(null);
+        }}
         deleting={deleting}
+        error={deleteError}
         onConfirm={handleConfirmDelete}
       />
 

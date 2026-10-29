@@ -10,9 +10,7 @@ use sqlx::FromRow;
 use ts_rs::TS;
 use uuid::Uuid;
 
-// ---------------------------------------------------------------------------
 // Entidades (espelham as tabelas)
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, TS)]
 #[ts(export)]
@@ -26,9 +24,7 @@ pub struct User {
     pub created_at: DateTime<Utc>,
 }
 
-// ---------------------------------------------------------------------------
 // Autenticação (Fase 11)
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Deserialize, TS)]
 #[ts(export)]
@@ -148,9 +144,7 @@ pub struct PriceObservation {
     pub observed_at: DateTime<Utc>,
 }
 
-// ---------------------------------------------------------------------------
 // Categorias
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Deserialize, TS)]
 #[ts(export)]
@@ -178,9 +172,7 @@ pub struct UpdateCategory {
     pub icon: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
 // Notas
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Deserialize, TS)]
 #[ts(export)]
@@ -264,9 +256,7 @@ pub struct ReceiptDetail {
     pub items: Vec<ReceiptItem>,
 }
 
-// ---------------------------------------------------------------------------
 // Dashboard
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, FromRow, TS)]
 #[ts(export)]
@@ -335,9 +325,7 @@ pub struct PriceAlert {
     pub observed_at: DateTime<Utc>,
 }
 
-// ---------------------------------------------------------------------------
 // Produtos e Histórico de Preços (Fase 3)
-// ---------------------------------------------------------------------------
 
 /// Ponto da série histórica de preços de um produto em um mercado.
 #[derive(Debug, Clone, Serialize, FromRow, TS)]
@@ -382,9 +370,7 @@ pub struct MergeProductsRequest {
     pub target_product_id: Uuid,
 }
 
-// ---------------------------------------------------------------------------
 // Crowdsourcing de Preços (Fase 12)
-// ---------------------------------------------------------------------------
 
 /// Item retornado pela busca pública de preços (`GET /public/prices/search?q=...`).
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, TS)]
