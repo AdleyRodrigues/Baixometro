@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -43,6 +44,7 @@ import {
   CardTitle,
 } from '../components/ui/card';
 import { Select } from '../components/ui/select';
+import { Skeleton } from '../components/ui/skeleton';
 import { formatCurrency, formatMonthYear } from '../format';
 import { cn } from '../lib/utils';
 
@@ -106,7 +108,7 @@ interface ProductPriceInsight {
 }
 
 export default function DashboardPage() {
-  const [period, setPeriod] = useState<DashboardPeriod>('month');
+  const [period, setPeriod] = useState<DashboardPeriod>('3m');
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [alerts, setAlerts] = useState<PriceAlert[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -254,10 +256,16 @@ export default function DashboardPage() {
 
   if (loading && !summary) {
     return (
-      <Card className="flex items-center justify-center gap-2.5 py-12 text-sm font-medium text-[#10b981]">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        <span>Carregando radar de preços...</span>
-      </Card>
+      <div className="flex flex-col gap-4" aria-label="Carregando radar de preços">
+        <Skeleton className="h-[60px] w-full" />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Skeleton className="h-[104px] w-full" />
+          <Skeleton className="h-[104px] w-full" />
+          <Skeleton className="h-[104px] w-full" />
+        </div>
+        <Skeleton className="h-[320px] w-full" />
+        <Skeleton className="h-[220px] w-full" />
+      </div>
     );
   }
 
@@ -292,7 +300,12 @@ export default function DashboardPage() {
   });
 
   return (
-    <div className="flex flex-col gap-4">
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: 'easeOut' }}
+      className="flex flex-col gap-4"
+    >
       {/* Top Header & Actions */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -314,8 +327,8 @@ export default function DashboardPage() {
             value={period}
             onChange={(e) => setPeriod(e.target.value as DashboardPeriod)}
           >
-            <option value="month">Mês Atual</option>
             <option value="3m">Últimos 3 meses</option>
+            <option value="month">Mês Atual</option>
             <option value="year">Ano</option>
           </Select>
 
@@ -803,6 +816,6 @@ export default function DashboardPage() {
           </Card>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

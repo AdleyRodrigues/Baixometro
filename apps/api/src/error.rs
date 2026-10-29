@@ -5,12 +5,21 @@ use axum::{
 };
 use serde::Serialize;
 use ts_rs::TS;
+use uuid::Uuid;
+
+use crate::models::ReceiptDetail;
 
 /// Corpo padrão das respostas de erro da API.
 #[derive(Debug, Serialize, TS)]
 #[ts(export)]
 pub struct ErrorResponse {
     pub error: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub existing_receipt_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub existing_receipt: Option<ReceiptDetail>,
 }
 
 /// Erros de domínio/infra convertidos em respostas HTTP.
@@ -18,10 +27,14 @@ pub struct ErrorResponse {
 pub enum AppError {
     /// Payload inválido (400).
     Validation(String),
+    /// Token JWT ausente, inválido ou credenciais incorretas (401).
+    Unauthorized(String),
     /// Recurso não encontrado (404).
     NotFound(String),
-    /// Violação de unicidade (409).
+    /// Violação de unicidade genérica (409).
     Conflict(String),
+    /// Nota fiscal duplicada pela chave de acesso de 44 dígitos (409).
+    DuplicateReceipt(Box<ReceiptDetail>),
     /// Conteúdo da nota (HTML da SEFAZ ou XML) não pôde ser lido/processado (422).
     Unprocessable(String),
     /// Erro inesperado (500). O detalhe vai para o log, não para o cliente.
@@ -30,20 +43,46 @@ pub enum AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, message) = match self {
-            AppError::Validation(msg) => (StatusCode::BAD_REQUEST, msg),
-            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
-            AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
-            AppError::Unprocessable(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg),
-            AppError::Internal(err) => {
-                tracing::error!("Erro interno: {err:#}");
+        match self {
+            AppError::DuplicateReceipt(detail) => {
+                let existing_id = detail.receipt.id;
                 (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Erro interno do servidor".to_string(),
+                    StatusCode::CONFLICT,
+                    Json(ErrorResponse {
+                        error: "Esta nota já foi registrada anteriormente".to_string(),
+                        existing_receipt_id: Some(existing_id),
+                        existing_receipt: Some(*detail),
+                    }),
                 )
+                    .into_response()
             }
-        };
-        (status, Json(ErrorResponse { error: message })).into_response()
+            other => {
+                let (status, message) = match other {
+                    AppError::Validation(msg) => (StatusCode::BAD_REQUEST, msg),
+                    AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
+                    AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
+                    AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
+                    AppError::Unprocessable(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg),
+                    AppError::Internal(err) => {
+                        tracing::error!("Erro interno: {err:#}");
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Erro interno do servidor".to_string(),
+                        )
+                    }
+                    AppError::DuplicateReceipt(_) => unreachable!(),
+                };
+                (
+                    status,
+                    Json(ErrorResponse {
+                        error: message,
+                        existing_receipt_id: None,
+                        existing_receipt: None,
+                    }),
+                )
+                    .into_response()
+            }
+        }
     }
 }
 

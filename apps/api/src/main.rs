@@ -11,7 +11,7 @@ use axum::{
     extract::State,
     http::StatusCode,
     middleware,
-    routing::{get, post},
+    routing::{get, post, put},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -99,15 +99,10 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    // 4. Rodar migrations e garantir usuário mock no boot
+    // 4. Rodar migrations no boot
     match sqlx::migrate!("../../infra/migrations").run(&pool).await {
         Ok(()) => {
             tracing::info!("Migrations aplicadas com sucesso");
-            if let Err(err) = auth::ensure_mock_user(&pool).await {
-                tracing::error!("Falha ao garantir usuário mock: {err}");
-            } else {
-                tracing::info!("Usuário mock garantido ({})", auth::MOCK_USER_EMAIL);
-            }
         }
         Err(err) => {
             tracing::error!("Falha ao executar migrations no boot: {err}");
@@ -116,12 +111,20 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState { pool };
 
-    // 5. Registrar rotas, middleware de auth mock, CORS permissive e TraceLayer
-    let app = Router::new()
+    // 5. Registrar rotas públicas (/health, /auth/*) e rotas protegidas por JWT
+    let public_routes = Router::new()
         .route("/health", get(health_check))
+        .route("/auth/register", post(auth::register))
+        .route("/auth/login", post(auth::login));
+
+    let protected_routes = Router::new()
         .route(
             "/categories",
             get(routes::categories::list_categories).post(routes::categories::create_category),
+        )
+        .route(
+            "/categories/{id}",
+            put(routes::categories::update_category).delete(routes::categories::delete_category),
         )
         .route(
             "/receipts",
@@ -134,6 +137,11 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/receipts/{id}", get(routes::receipts::get_receipt))
         .route("/products", get(routes::products::list_products))
+        .route("/products/merge", post(routes::products::merge_products))
+        .route(
+            "/products/{id}",
+            put(routes::products::update_product).delete(routes::products::delete_product),
+        )
         .route(
             "/products/{id}/history",
             get(routes::products::get_product_history),
@@ -143,13 +151,17 @@ async fn main() -> anyhow::Result<()> {
             "/dashboard/summary",
             get(routes::dashboard::get_dashboard_summary),
         )
-        .layer(middleware::from_fn(auth::mock_auth))
+        .route_layer(middleware::from_fn(auth::auth_middleware));
+
+    let app = public_routes
+        .merge(protected_routes)
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive());
 
-    // 6. Escutar em 0.0.0.0:3000 (ou API_PORT configurado)
+    // 6. Escutar em 0.0.0.0:3000 (ou API_PORT / PORT configurado em PaaS)
     let port = std::env::var("API_PORT")
+        .or_else(|_| std::env::var("PORT"))
         .unwrap_or_else(|_| "3000".to_string())
         .parse::<u16>()
         .unwrap_or(3000);

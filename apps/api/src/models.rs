@@ -16,12 +16,37 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, TS)]
 #[ts(export)]
-#[allow(dead_code)] // perfil completo chega nas fases de autenticação
 pub struct User {
     pub id: Uuid,
     pub name: String,
     pub email: String,
     pub created_at: DateTime<Utc>,
+}
+
+// ---------------------------------------------------------------------------
+// Autenticação (Fase 11)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export)]
+pub struct RegisterRequest {
+    pub name: String,
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export)]
+pub struct LoginRequest {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AuthResponse {
+    pub token: String,
+    pub user: User,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, TS)]
@@ -81,6 +106,10 @@ pub struct Product {
     pub name: String,
     pub brand: Option<String>,
     pub created_at: DateTime<Utc>,
+    #[sqlx(default)]
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub observation_count: i64,
 }
 
 /// Alias que associa uma descrição bruta de item de nota a um `Product` canônico.
@@ -128,6 +157,18 @@ pub struct CreateCategory {
     pub icon: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export)]
+pub struct UpdateCategory {
+    pub name: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub color: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub icon: Option<String>,
+}
+
 // ---------------------------------------------------------------------------
 // Notas
 // ---------------------------------------------------------------------------
@@ -169,6 +210,10 @@ pub struct CreateReceipt {
     #[serde(default)]
     #[ts(optional)]
     pub access_key: Option<String>,
+    /// Quando `true` (apenas no passo de revisão pós-importação), substitui a nota recém-importada.
+    #[serde(default)]
+    #[ts(optional)]
+    pub replace_existing: Option<bool>,
     pub items: Vec<CreateReceiptItem>,
 }
 
@@ -305,4 +350,25 @@ pub struct PriceHistoryPoint {
 pub struct ProductPriceHistory {
     pub product: Product,
     pub observations: Vec<PriceHistoryPoint>,
+}
+
+/// Payload do `PUT /products/:id`.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export)]
+pub struct UpdateProduct {
+    pub name: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub brand: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub gtin: Option<String>,
+}
+
+/// Payload do `POST /products/merge`.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export)]
+pub struct MergeProductsRequest {
+    pub source_product_id: Uuid,
+    pub target_product_id: Uuid,
 }

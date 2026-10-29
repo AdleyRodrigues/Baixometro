@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::{
     auth::CurrentUser,
     error::{AppError, AppResult},
-    importers::{parse_nfce_xml, ImportedReceipt, NfceImporter, SefazImporter},
+    importers::{extract_access_key, parse_nfce_xml, ImportedReceipt, NfceImporter, SefazImporter},
     models::{
         CreateReceipt, CreateReceiptItem, ImportReceiptRequest, Product, Receipt, ReceiptDetail,
         ReceiptItem, ReceiptSummary, Store,
@@ -112,7 +112,6 @@ pub async fn import_receipt(
     Extension(user): Extension<CurrentUser>,
     Json(payload): Json<ImportReceiptRequest>,
 ) -> AppResult<(StatusCode, Json<ReceiptDetail>)> {
-    let importer = SefazImporter::new();
     let target = payload
         .qr_url
         .as_deref()
@@ -120,6 +119,18 @@ pub async fn import_receipt(
         .filter(|s| !s.is_empty())
         .unwrap_or(payload.access_key.trim());
 
+    // Antes de consultar a SEFAZ, verifica se a chave de 44 dígitos já está no banco
+    if let Some(key) =
+        extract_access_key(target).or_else(|| extract_access_key(payload.access_key.trim()))
+    {
+        if let Some(existing) =
+            find_existing_receipt_by_access_key(&state.pool, user.id, &key).await?
+        {
+            return Err(AppError::DuplicateReceipt(Box::new(existing)));
+        }
+    }
+
+    let importer = SefazImporter::new();
     let imported = importer.fetch_receipt(target).await?;
     let create_payload = imported_to_create_receipt(imported);
 
@@ -174,6 +185,7 @@ fn imported_to_create_receipt(imported: ImportedReceipt) -> CreateReceipt {
         } else {
             Some(imported.access_key)
         },
+        replace_existing: None,
         items: imported
             .items
             .into_iter()
@@ -188,6 +200,54 @@ fn imported_to_create_receipt(imported: ImportedReceipt) -> CreateReceipt {
             })
             .collect(),
     }
+}
+
+/// Busca uma nota fiscal já registrada pelo mesmo usuário a partir da chave de acesso (`access_key`).
+async fn find_existing_receipt_by_access_key(
+    pool: &PgPool,
+    user_id: Uuid,
+    access_key: &str,
+) -> AppResult<Option<ReceiptDetail>> {
+    let Some(receipt) = sqlx::query_as::<_, Receipt>(
+        r#"
+        SELECT id, user_id, store_id, issued_at, total_amount, access_key, created_at
+        FROM receipts
+        WHERE user_id = $1 AND access_key = $2
+        LIMIT 1
+        "#,
+    )
+    .bind(user_id)
+    .bind(access_key)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Ok(None);
+    };
+
+    let store = sqlx::query_as::<_, Store>(
+        "SELECT id, name, cnpj, created_at FROM stores WHERE id = $1 LIMIT 1",
+    )
+    .bind(receipt.store_id)
+    .fetch_one(pool)
+    .await?;
+
+    let items = sqlx::query_as::<_, ReceiptItem>(
+        r#"
+        SELECT id, receipt_id, category_id, description, quantity, unit, unit_price, total_price, gtin
+        FROM receipt_items
+        WHERE receipt_id = $1
+        ORDER BY id ASC
+        "#,
+    )
+    .bind(receipt.id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(Some(ReceiptDetail {
+        receipt,
+        store,
+        items,
+    }))
 }
 
 /// Persiste uma nota fiscal e todos os seus itens em uma única transação SQL.
@@ -244,17 +304,26 @@ pub async fn save_receipt_with_items(
         .map(str::trim)
         .filter(|s| !s.is_empty());
 
+    if let Some(key) = access_key {
+        if payload.replace_existing != Some(true) {
+            if let Some(existing) = find_existing_receipt_by_access_key(pool, user_id, key).await? {
+                return Err(AppError::DuplicateReceipt(Box::new(existing)));
+            }
+        }
+    }
+
     let mut tx = pool.begin().await?;
 
-    // Se a nota já foi importada com esta chave de acesso (ex.: durante o passo de revisão),
-    // removemos a versão anterior (ON DELETE CASCADE remove receipt_items e price_observations)
-    // antes de gravar a versão revisada.
+    // Quando `replace_existing == Some(true)` (passo de revisão pós-importação),
+    // removemos a versão recém-importada antes de gravar a versão revisada.
     if let Some(key) = access_key {
-        sqlx::query("DELETE FROM receipts WHERE user_id = $1 AND access_key = $2")
-            .bind(user_id)
-            .bind(key)
-            .execute(&mut *tx)
-            .await?;
+        if payload.replace_existing == Some(true) {
+            sqlx::query("DELETE FROM receipts WHERE user_id = $1 AND access_key = $2")
+                .bind(user_id)
+                .bind(key)
+                .execute(&mut *tx)
+                .await?;
+        }
     }
 
     let store = find_or_create_store(&mut tx, store_name, cnpj).await?;

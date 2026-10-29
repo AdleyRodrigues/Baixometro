@@ -1,9 +1,47 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import {
+  AlertCircle,
+  AlertTriangle,
+  ArrowUpRight,
+  Calendar,
+  Check,
+  CheckCircle2,
+  FileUp,
+  KeyRound,
+  Loader2,
+  Package,
+  Plus,
+  QrCode,
+  Sparkles,
+  Store,
+  Trash2,
+} from 'lucide-react';
 import type { Category, Product, ReceiptDetail } from '@baixometro/shared-types';
-import { api } from '../api';
+import { api, ApiError } from '../api';
 import QrScannerModal from '../components/QrScannerModal';
-import { formatCurrency } from '../format';
+import { Badge } from '../components/ui/badge';
+import { Button, buttonVariants } from '../components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '../components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
+import { Input } from '../components/ui/input';
+import { Select } from '../components/ui/select';
+import { formatCurrency, formatDate } from '../format';
+import { cn } from '../lib/utils';
 
 const SAMPLE_CEARA_NFCE_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <nfeProc versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe">
@@ -97,23 +135,42 @@ export default function NewReceiptPage() {
   const [importing, setImporting] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [importedBanner, setImportedBanner] = useState<string | null>(null);
+  const [isReviewingFreshImport, setIsReviewingFreshImport] = useState(false);
+  const [duplicateReceipt, setDuplicateReceipt] = useState<ReceiptDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [suggestXmlFallback, setSuggestXmlFallback] = useState(false);
   const xmlInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleDuplicateConflict = useCallback(async (err: ApiError) => {
+    setScannerOpen(false);
+    setError(null);
+    setSuggestXmlFallback(false);
+
+    if (err.existingReceipt) {
+      setDuplicateReceipt(err.existingReceipt);
+      return;
+    }
+    if (err.existingReceiptId) {
+      try {
+        const fetched = await api.getReceipt(err.existingReceiptId);
+        setDuplicateReceipt(fetched);
+        return;
+      } catch {
+        // fallback para mensagem de erro caso falhe o fetch
+      }
+    }
+    setError(err.message);
+  }, []);
 
   useEffect(() => {
     api
       .getCategories()
       .then(setCategories)
-      .catch(() => {
-        // categorias são opcionais no preenchimento
-      });
+      .catch(() => {});
     api
       .getProducts()
       .then(setProducts)
-      .catch(() => {
-        // produtos são opcionais no preenchimento
-      });
+      .catch(() => {});
   }, []);
 
   const populateFromImported = useCallback(
@@ -157,9 +214,10 @@ export default function NewReceiptPage() {
             ],
       );
       setNextKey(mapped.length + 1);
+      setIsReviewingFreshImport(true);
       setSuggestXmlFallback(false);
       setImportedBanner(
-        'Nota importada com sucesso! Revise os campos abaixo (produtos e categorias) e clique em Salvar Nota para confirmar.',
+        'Nota importada com sucesso! Revise os itens, produtos e categorias abaixo e clique em Salvar Nota.',
       );
     },
     [],
@@ -183,6 +241,10 @@ export default function NewReceiptPage() {
         populateFromImported(importedDetail, latestProducts);
         navigate('/receipts/new', { replace: true });
       } catch (err) {
+        if (err instanceof ApiError && err.status === 409) {
+          await handleDuplicateConflict(err);
+          return;
+        }
         setError(
           err instanceof Error
             ? err.message
@@ -193,7 +255,7 @@ export default function NewReceiptPage() {
         setImporting(false);
       }
     },
-    [navigate, populateFromImported, products],
+    [handleDuplicateConflict, navigate, populateFromImported, products],
   );
 
   const importXmlFileObject = useCallback(
@@ -210,12 +272,16 @@ export default function NewReceiptPage() {
         populateFromImported(importedDetail, latestProducts);
         navigate('/receipts/new', { replace: true });
       } catch (err) {
+        if (err instanceof ApiError && err.status === 409) {
+          await handleDuplicateConflict(err);
+          return;
+        }
         setError(err instanceof Error ? err.message : 'Falha ao importar o arquivo XML da nota.');
       } finally {
         setImporting(false);
       }
     },
-    [navigate, populateFromImported, products],
+    [handleDuplicateConflict, navigate, populateFromImported, products],
   );
 
   const handleXmlFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -307,11 +373,16 @@ export default function NewReceiptPage() {
         store_name: storeName.trim(),
         store_cnpj: storeCnpj,
         access_key: accessKey,
+        replace_existing: isReviewingFreshImport ? true : undefined,
         issued_at: issuedAtIso,
         items: parsedItems,
       });
       navigate('/receipts');
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        await handleDuplicateConflict(err);
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Erro ao salvar a nota');
     } finally {
       setSubmitting(false);
@@ -326,6 +397,70 @@ export default function NewReceiptPage() {
 
   return (
     <>
+      {/* Modal de Alerta: Nota já registrada (HTTP 409) */}
+      <Dialog
+        open={Boolean(duplicateReceipt)}
+        onOpenChange={(open) => {
+          if (!open) setDuplicateReceipt(null);
+        }}
+      >
+        <DialogContent onClose={() => setDuplicateReceipt(null)}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-400">
+              <AlertTriangle className="h-5 w-5" />
+              <span>Nota já registrada</span>
+            </DialogTitle>
+            <DialogDescription>
+              Esta nota fiscal (NFC-e) já foi cadastrada anteriormente no seu histórico.
+            </DialogDescription>
+          </DialogHeader>
+
+          {duplicateReceipt && (
+            <div className="space-y-2.5 rounded-xl border border-[#27272a] bg-[#09090b] p-4 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400">Mercado:</span>
+                <strong className="text-sm text-zinc-100">{duplicateReceipt.store.name}</strong>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400">Data de emissão:</span>
+                <span className="font-medium text-zinc-200">
+                  {formatDate(duplicateReceipt.issued_at)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400">Total da nota:</span>
+                <strong className="text-base text-[#10b981]">
+                  {formatCurrency(duplicateReceipt.total_amount)}
+                </strong>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400">Itens registrados:</span>
+                <span className="text-zinc-300">{duplicateReceipt.items.length} itens</span>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setDuplicateReceipt(null)}
+            >
+              Fechar
+            </Button>
+            {duplicateReceipt && (
+              <Link
+                to={`/receipts/${duplicateReceipt.id}`}
+                className={cn(buttonVariants({ variant: 'default' }))}
+              >
+                <span>Ver Nota Existente</span>
+                <ArrowUpRight className="h-4 w-4" />
+              </Link>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <QrScannerModal
         open={scannerOpen}
         onClose={() => setScannerOpen(false)}
@@ -344,244 +479,232 @@ export default function NewReceiptPage() {
         type="file"
         accept=".xml,text/xml,application/xml"
         onChange={handleXmlFileChange}
-        style={{ display: 'none' }}
+        className="hidden"
       />
 
-      <form
+      <motion.form
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, ease: 'easeOut' }}
         onSubmit={handleFormSubmit}
-        style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+        className="flex flex-col gap-4"
       >
-        <div className="section-header" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
+        {/* Header & Botões de Importação */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="section-title" style={{ fontSize: '1.25rem' }}>
-              {accessKey ? 'Revisar Nota Importada' : 'Nova Nota'}
+            <h1 className="text-xl font-bold tracking-tight text-zinc-50">
+              {accessKey ? 'Revisar Nota Importada' : 'Nova Nota Fiscal'}
             </h1>
-            <p style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>
-              Escaneie o QR Code da NFC-e, importe o XML oficial ou preencha manualmente
+            <p className="text-xs text-zinc-400">
+              Escaneie o QR Code da NFC-e, importe o XML oficial ou preencha os itens abaixo
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
               type="button"
-              className="btn btn-secondary"
+              variant="secondary"
               onClick={() => setScannerOpen(true)}
               disabled={importing}
             >
-              📷 {importing ? 'Importando...' : 'Escanear QR Code'}
-            </button>
+              {importing ? (
+                <Loader2 className="h-4 w-4 animate-spin text-[#10b981]" />
+              ) : (
+                <QrCode className="h-4 w-4 text-[#10b981]" />
+              )}
+              <span>{importing ? 'Importando...' : 'Escanear QR Code'}</span>
+            </Button>
 
-            <button
+            <Button
               type="button"
-              className="btn btn-secondary"
+              variant="secondary"
               onClick={() => xmlInputRef.current?.click()}
               disabled={importing}
             >
-              📄 Importar XML da Nota
-            </button>
+              <FileUp className="h-4 w-4 text-[#10b981]" />
+              <span>Importar XML da Nota</span>
+            </Button>
           </div>
         </div>
 
+        {/* Banner de Sucesso na Importação */}
         {importedBanner && (
-          <div
-            style={{
-              padding: '0.75rem 1rem',
-              borderRadius: '0.75rem',
-              background: 'rgba(56, 189, 248, 0.14)',
-              border: '1px solid rgba(56, 189, 248, 0.35)',
-              color: '#7dd3fc',
-              fontSize: '0.875rem',
-            }}
-          >
-            {importedBanner}
+          <div className="flex items-start gap-2.5 rounded-xl border border-[#10b981]/35 bg-[#10b981]/10 p-3.5 text-xs text-emerald-200">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#10b981]" />
+            <span>{importedBanner}</span>
           </div>
         )}
 
+        {/* Erro / Sugestão de Fallback XML */}
         {error && (
-          <div
-            className="alert-error"
-            style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}
-          >
-            <div>{error}</div>
+          <div className="space-y-3 rounded-xl border border-red-500/35 bg-red-950/20 p-4 text-xs text-red-200">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+              <span className="font-medium">{error}</span>
+            </div>
+
             {suggestXmlFallback && (
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.5rem',
-                  paddingTop: '0.5rem',
-                  borderTop: '1px solid rgba(248, 113, 113, 0.25)',
-                }}
-              >
-                <span style={{ fontSize: '0.8125rem', color: '#fecaca' }}>
-                  💡 <strong>Dica:</strong> Se o portal da SEFAZ estiver fora do ar ou exigindo Captcha,
-                  você pode importar diretamente o arquivo <strong>.xml</strong> da NFC-e:
-                </span>
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <button
+              <div className="space-y-2.5 border-t border-red-500/25 pt-3">
+                <p className="text-zinc-300">
+                  <strong>Dica:</strong> Se o portal da SEFAZ estiver fora do ar ou exigindo
+                  Captcha, você pode enviar diretamente o arquivo <strong>.xml</strong> da NFC-e:
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
                     type="button"
-                    className="btn btn-primary"
                     onClick={() => xmlInputRef.current?.click()}
                     disabled={importing}
                   >
-                    📄 Enviar XML da Nota (.xml)
-                  </button>
-                  <button
+                    <FileUp className="h-4 w-4" />
+                    <span>Enviar XML da Nota (.xml)</span>
+                  </Button>
+                  <Button
                     type="button"
-                    className="btn btn-secondary"
+                    variant="secondary"
                     onClick={handleSampleXmlImport}
                     disabled={importing}
                   >
-                    🧪 Testar com XML de Exemplo (SEFAZ-CE)
-                  </button>
+                    <Sparkles className="h-4 w-4 text-[#10b981]" />
+                    <span>Testar com XML de Exemplo (SEFAZ-CE)</span>
+                  </Button>
                 </div>
               </div>
             )}
           </div>
         )}
 
-        <section className="card">
-          <div className="field">
-            <label className="field-label" htmlFor="store-name">
-              Nome do Mercado *
-            </label>
-            <input
-              id="store-name"
-              className="input"
-              type="text"
-              placeholder="Ex.: Supermercado Central"
-              value={storeName}
-              onChange={(e) => setStoreName(e.target.value)}
-              required
-            />
-          </div>
+        {/* Card 1: Dados do Mercado */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <Store className="h-4 w-4 text-[#10b981]" />
+              <span>Dados do Estabelecimento</span>
+            </CardTitle>
+            <CardDescription>
+              Identifique o supermercado e a data da compra
+            </CardDescription>
+          </CardHeader>
 
-          <div className="field">
-            <label className="field-label" htmlFor="issued-date">
-              Data da Compra *
-            </label>
-            <input
-              id="issued-date"
-              className="input"
-              type="date"
-              value={issuedDate}
-              onChange={(e) => setIssuedDate(e.target.value)}
-              required
-            />
-          </div>
+          <CardContent className="space-y-3.5">
+            <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label
+                  className="block text-xs font-medium text-zinc-300"
+                  htmlFor="store-name"
+                >
+                  Nome do Mercado *
+                </label>
+                <Input
+                  id="store-name"
+                  type="text"
+                  placeholder="Ex.: Supermercado São Luiz"
+                  value={storeName}
+                  onChange={(e) => setStoreName(e.target.value)}
+                  required
+                />
+              </div>
 
-          {accessKey && (
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8', wordBreak: 'break-all' }}>
-              🔑 Chave NFC-e: <strong style={{ color: '#cbd5e1' }}>{accessKey}</strong>
+              <div className="space-y-1.5">
+                <label
+                  className="flex items-center gap-1.5 text-xs font-medium text-zinc-300"
+                  htmlFor="issued-date"
+                >
+                  <Calendar className="h-3.5 w-3.5 text-zinc-400" />
+                  <span>Data da Compra *</span>
+                </label>
+                <Input
+                  id="issued-date"
+                  type="date"
+                  value={issuedDate}
+                  onChange={(e) => setIssuedDate(e.target.value)}
+                  required
+                />
+              </div>
             </div>
-          )}
-        </section>
 
-        <section className="card">
-          <div className="section-header">
-            <h2 className="section-title">Itens ({items.length})</h2>
-            <button type="button" className="btn btn-secondary" onClick={addItem}>
-              + Adicionar item
-            </button>
-          </div>
+            {accessKey && (
+              <div className="flex items-start gap-2 rounded-lg border border-[#27272a] bg-[#09090b] px-3 py-2 text-xs text-zinc-400">
+                <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#10b981]" />
+                <div className="break-all">
+                  <span>Chave NFC-e: </span>
+                  <strong className="font-mono text-zinc-200">{accessKey}</strong>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+        {/* Card 2: Lista de Itens */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
+            <div className="space-y-1">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Package className="h-4 w-4 text-[#10b981]" />
+                <span>Itens da Compra ({items.length})</span>
+              </CardTitle>
+              <CardDescription>
+                Informe o preço unitário pago em cada produto
+              </CardDescription>
+            </div>
+
+            <Button type="button" variant="secondary" size="sm" onClick={addItem}>
+              <Plus className="h-4 w-4 text-[#10b981]" />
+              <span>Adicionar item</span>
+            </Button>
+          </CardHeader>
+
+          <CardContent className="space-y-3.5">
             {items.map((item, idx) => (
               <div
                 key={item.key}
-                style={{
-                  padding: '0.875rem',
-                  borderRadius: '0.75rem',
-                  background: 'rgba(15, 23, 42, 0.55)',
-                  border: '1px solid rgba(255, 255, 255, 0.06)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.65rem',
-                }}
+                className="space-y-3 rounded-xl border border-[#27272a] bg-[#09090b]/70 p-4"
               >
-                <div className="section-header">
-                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8' }}>
+                <div className="flex items-center justify-between">
+                  <Badge variant="secondary" className="font-mono text-[11px]">
                     ITEM #{idx + 1}
-                  </span>
+                  </Badge>
                   {items.length > 1 && (
-                    <button
+                    <Button
                       type="button"
-                      className="btn btn-danger"
-                      style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
+                      variant="destructive"
+                      size="sm"
                       onClick={() => removeItem(item.key)}
                     >
-                      Remover
-                    </button>
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Remover</span>
+                    </Button>
                   )}
                 </div>
 
-                <div className="field">
-                  <label className="field-label" htmlFor={`item-desc-${item.key}`}>
-                    Descrição *
+                <div className="space-y-1.5">
+                  <label
+                    className="block text-xs font-medium text-zinc-300"
+                    htmlFor={`item-desc-${item.key}`}
+                  >
+                    Descrição do Produto *
                   </label>
-                  <input
+                  <Input
                     id={`item-desc-${item.key}`}
                     name={`item-desc-${item.key}`}
-                    className="input"
                     type="text"
-                    placeholder="Ex.: Arroz Branco 5kg"
+                    placeholder="Ex.: Arroz Branco Tipo 1 5kg"
                     value={item.description}
                     onChange={(e) => updateItem(item.key, 'description', e.target.value)}
                     required
                   />
                 </div>
 
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 90px 1fr',
-                    gap: '0.5rem',
-                  }}
-                >
-                  <div className="field">
-                    <label className="field-label" htmlFor={`item-qty-${item.key}`}>
-                      Qtd *
-                    </label>
-                    <input
-                      id={`item-qty-${item.key}`}
-                      name={`item-qty-${item.key}`}
-                      className="input"
-                      type="number"
-                      step="0.001"
-                      min="0.001"
-                      value={item.quantity}
-                      onChange={(e) => updateItem(item.key, 'quantity', e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <div className="field">
-                    <label className="field-label" htmlFor={`item-unit-${item.key}`}>
-                      Unid.
-                    </label>
-                    <select
-                      id={`item-unit-${item.key}`}
-                      name={`item-unit-${item.key}`}
-                      className="select"
-                      value={item.unit}
-                      onChange={(e) => updateItem(item.key, 'unit', e.target.value)}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <label
+                      className="block text-xs font-medium text-zinc-300"
+                      htmlFor={`item-price-${item.key}`}
                     >
-                      <option value="UN">UN</option>
-                      <option value="KG">KG</option>
-                      <option value="L">L</option>
-                      <option value="CX">CX</option>
-                      <option value="PCT">PCT</option>
-                    </select>
-                  </div>
-
-                  <div className="field">
-                    <label className="field-label" htmlFor={`item-price-${item.key}`}>
-                      Preço Unit. (R$) *
+                      Preço Unitário (R$) *
                     </label>
-                    <input
+                    <Input
                       id={`item-price-${item.key}`}
                       name={`item-price-${item.key}`}
-                      className="input"
                       type="number"
                       step="0.01"
                       min="0"
@@ -591,74 +714,131 @@ export default function NewReceiptPage() {
                       required
                     />
                   </div>
+
+                  <div className="space-y-1.5">
+                    <label
+                      className="block text-xs font-medium text-zinc-300"
+                      htmlFor={`item-qty-${item.key}`}
+                    >
+                      Quantidade *
+                    </label>
+                    <Input
+                      id={`item-qty-${item.key}`}
+                      name={`item-qty-${item.key}`}
+                      type="number"
+                      step="0.001"
+                      min="0.001"
+                      value={item.quantity}
+                      onChange={(e) => updateItem(item.key, 'quantity', e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label
+                      className="block text-xs font-medium text-zinc-300"
+                      htmlFor={`item-unit-${item.key}`}
+                    >
+                      Unidade
+                    </label>
+                    <Select
+                      id={`item-unit-${item.key}`}
+                      name={`item-unit-${item.key}`}
+                      wrapperClassName="w-full"
+                      value={item.unit}
+                      onChange={(e) => updateItem(item.key, 'unit', e.target.value)}
+                    >
+                      <option value="UN">UN (Unidade)</option>
+                      <option value="KG">KG (Quilo)</option>
+                      <option value="L">L (Litro)</option>
+                      <option value="CX">CX (Caixa)</option>
+                      <option value="PCT">PCT (Pacote)</option>
+                    </Select>
+                  </div>
                 </div>
 
-                <div className="field">
-                  <label className="field-label" htmlFor={`item-cat-${item.key}`}>
-                    Categoria
-                  </label>
-                  <select
-                    id={`item-cat-${item.key}`}
-                    name={`item-cat-${item.key}`}
-                    className="select"
-                    value={item.category_id}
-                    onChange={(e) => updateItem(item.key, 'category_id', e.target.value)}
-                  >
-                    <option value="">Sem categoria</option>
-                    {categories.map((cat) => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.icon} {cat.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label
+                      className="block text-xs font-medium text-zinc-300"
+                      htmlFor={`item-cat-${item.key}`}
+                    >
+                      Categoria
+                    </label>
+                    <Select
+                      id={`item-cat-${item.key}`}
+                      name={`item-cat-${item.key}`}
+                      wrapperClassName="w-full"
+                      value={item.category_id}
+                      onChange={(e) => updateItem(item.key, 'category_id', e.target.value)}
+                    >
+                      <option value="">Sem categoria</option>
+                      {categories.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.icon} {cat.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
 
-                <div className="field">
-                  <label className="field-label" htmlFor={`item-prod-${item.key}`}>
-                    Produto Canônico (Vínculo / Histórico)
-                  </label>
-                  <select
-                    id={`item-prod-${item.key}`}
-                    name={`item-prod-${item.key}`}
-                    className="select"
-                    value={item.product_id}
-                    onChange={(e) => updateItem(item.key, 'product_id', e.target.value)}
-                  >
-                    <option value="">
-                      ✨ Criar novo produto (ou vincular automaticamente por GTIN/Alias)
-                    </option>
-                    {products.map((prod) => (
-                      <option key={prod.id} value={prod.id}>
-                        📦 {prod.name} {prod.gtin ? `(${prod.gtin})` : ''}
+                  <div className="space-y-1.5">
+                    <label
+                      className="block text-xs font-medium text-zinc-300"
+                      htmlFor={`item-prod-${item.key}`}
+                    >
+                      Produto Canônico (Histórico de Preços)
+                    </label>
+                    <Select
+                      id={`item-prod-${item.key}`}
+                      name={`item-prod-${item.key}`}
+                      wrapperClassName="w-full"
+                      value={item.product_id}
+                      onChange={(e) => updateItem(item.key, 'product_id', e.target.value)}
+                    >
+                      <option value="">
+                        ✨ Criar novo ou vincular automaticamente por GTIN
                       </option>
-                    ))}
-                  </select>
+                      {products.map((prod) => (
+                        <option key={prod.id} value={prod.id}>
+                          📦 {prod.name} {prod.gtin ? `(${prod.gtin})` : ''}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
                 </div>
               </div>
             ))}
-          </div>
-        </section>
+          </CardContent>
+        </Card>
 
-        <div
-          className="card"
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <div>
-            <div className="kpi-label">Total estimado</div>
-            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#38bdf8' }}>
-              {formatCurrency(previewTotal)}
+        {/* Card 3: Rodapé com Total Estimado e Botão Salvar */}
+        <Card className="border-[#10b981]/35 bg-gradient-to-r from-[#10b981]/10 via-[#121215] to-[#121215]">
+          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-wider text-zinc-400">
+                Total Estimado da Nota
+              </div>
+              <div className="text-2xl font-bold tracking-tight text-[#10b981]">
+                {formatCurrency(previewTotal)}
+              </div>
             </div>
-          </div>
 
-          <button type="submit" className="btn btn-primary" disabled={submitting}>
-            {submitting ? 'Salvando...' : 'Salvar Nota'}
-          </button>
-        </div>
-      </form>
+            <Button type="submit" size="lg" disabled={submitting} className="w-full sm:w-auto">
+              {submitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Salvando...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="h-4 w-4 stroke-[2.5]" />
+                  <span>Salvar Nota Fiscal</span>
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      </motion.form>
     </>
   );
 }

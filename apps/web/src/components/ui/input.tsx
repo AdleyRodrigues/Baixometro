@@ -9,7 +9,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
       type={type}
       ref={ref}
       className={cn(
-        'flex h-9 w-full rounded-lg border border-[#27272a] bg-[#09090b] px-3 py-1.5 text-sm text-zinc-100 shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10b981]/40 focus-visible:border-[#10b981] disabled:cursor-not-allowed disabled:opacity-50',
+        'flex min-h-[44px] h-11 w-full rounded-lg border border-[#27272a] bg-[#09090b] px-3.5 py-2 text-sm text-zinc-100 shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10b981]/40 focus-visible:border-[#10b981] disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}
       {...props}
@@ -19,4 +19,3 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
 Input.displayName = 'Input';
 
 export { Input };
-

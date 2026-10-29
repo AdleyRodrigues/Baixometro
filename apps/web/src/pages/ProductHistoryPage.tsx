@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import {
   ArrowLeft,
   Award,
   CheckCircle2,
-  Loader2,
   Package,
   Store,
   TrendingDown,
@@ -31,6 +31,7 @@ import {
   CardHeader,
   CardTitle,
 } from '../components/ui/card';
+import { Skeleton } from '../components/ui/skeleton';
 import { formatCurrency, formatDate } from '../format';
 import { cn } from '../lib/utils';
 
@@ -67,10 +68,15 @@ export default function ProductHistoryPage() {
 
   if (loading) {
     return (
-      <Card className="flex items-center justify-center gap-2.5 py-12 text-sm font-medium text-[#10b981]">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        <span>Carregando histórico de preços...</span>
-      </Card>
+      <div className="flex flex-col gap-4" aria-label="Carregando histórico de preços">
+        <Skeleton className="h-[64px] w-full" />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Skeleton className="h-[104px] w-full" />
+          <Skeleton className="h-[104px] w-full" />
+          <Skeleton className="h-[104px] w-full" />
+        </div>
+        <Skeleton className="h-[290px] w-full" />
+      </div>
     );
   }
 
@@ -120,7 +126,12 @@ export default function ProductHistoryPage() {
       : 0;
 
   return (
-    <div className="flex flex-col gap-4">
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: 'easeOut' }}
+      className="flex flex-col gap-4"
+    >
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
@@ -364,6 +375,6 @@ export default function ProductHistoryPage() {
           </div>
         </CardContent>
       </Card>
-    </div>
+    </motion.div>
   );
 }

@@ -1,7 +1,7 @@
 COMPOSE = docker compose -f infra/docker-compose.yml --env-file .env
 COMPOSE_PROD = docker compose -f infra/docker-compose.prod.yml
 
-.PHONY: dev up down logs shell-api psql clean prod-up prod-down
+.PHONY: dev up down reset-db logs shell-api psql clean prod-up prod-down
 
 dev:
 	$(COMPOSE) up --build
@@ -11,6 +11,10 @@ up:
 
 down:
 	$(COMPOSE) down
+
+reset-db:
+	$(COMPOSE) down -v
+	$(COMPOSE) up -d postgres
 
 logs:
 	$(COMPOSE) logs -f

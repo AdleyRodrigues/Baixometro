@@ -9,6 +9,9 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/shared-types packages/shared-types
 COPY apps/web apps/web
 
+ARG VITE_API_URL=/api
+ENV VITE_API_URL=${VITE_API_URL}
+
 RUN pnpm install --frozen-lockfile
 RUN pnpm build:web
 

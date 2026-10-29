@@ -19,10 +19,10 @@ const buttonVariants = cva(
           'bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25 active:bg-red-500/30',
       },
       size: {
-        default: 'h-9 px-3.5 py-2',
-        sm: 'h-8 rounded-md px-3 text-xs',
-        lg: 'h-10 rounded-lg px-5 text-sm',
-        icon: 'h-9 w-9',
+        default: 'min-h-[44px] h-11 px-4 py-2',
+        sm: 'min-h-[38px] h-9 rounded-md px-3 text-xs',
+        lg: 'min-h-[48px] h-12 rounded-lg px-5 text-sm',
+        icon: 'min-h-[44px] h-11 w-11',
       },
     },
     defaultVariants: {
@@ -48,4 +48,3 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 Button.displayName = 'Button';
 
 export { Button, buttonVariants };
-

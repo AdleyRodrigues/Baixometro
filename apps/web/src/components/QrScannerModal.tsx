@@ -1,5 +1,11 @@
 import { ChangeEvent, useEffect, useId, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import { Html5Qrcode } from 'html5-qrcode';
+import { AlertCircle, FileUp, ImageUp, QrCode, X, Zap } from 'lucide-react';
+import { Button, buttonVariants } from './ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Input } from './ui/input';
+import { cn } from '../lib/utils';
 
 interface QrScannerModalProps {
   open: boolean;
@@ -161,135 +167,116 @@ export default function QrScannerModal({
       role="dialog"
       aria-modal="true"
       aria-label="Escanear QR Code da NFC-e"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 50,
-        backgroundColor: 'rgba(15, 23, 42, 0.85)',
-        backdropFilter: 'blur(8px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '1rem',
-      }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md"
     >
-      <div
-        className="card"
-        style={{
-          width: '100%',
-          maxWidth: '460px',
-          background: '#1e293b',
-          border: '1px solid rgba(56, 189, 248, 0.25)',
-        }}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        className="w-full max-w-[460px]"
       >
-        <div className="section-header">
-          <h2 className="section-title">📷 Escanear QR Code NFC-e</h2>
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Fechar
-          </button>
-        </div>
-
-        <p style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>
-          Aponte a câmera para o QR Code impresso no cupom fiscal ou escolha uma alternativa abaixo.
-        </p>
-
-        <div
-          id={readerElementId}
-          style={{
-            width: '100%',
-            minHeight: cameraError ? '60px' : '240px',
-            borderRadius: '0.75rem',
-            overflow: 'hidden',
-            background: '#0f172a',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-          }}
-        />
-
-        {cameraError && (
-          <div
-            style={{
-              padding: '0.65rem 0.85rem',
-              borderRadius: '0.65rem',
-              background: 'rgba(234, 179, 8, 0.14)',
-              border: '1px solid rgba(234, 179, 8, 0.35)',
-              color: '#fde047',
-              fontSize: '0.8125rem',
-            }}
-          >
-            {cameraError}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            style={{ flex: 1 }}
-            onClick={handleSimulateScan}
-          >
-            ⚡ Simular QR de Teste (1 clique)
-          </button>
-
-          <label
-            htmlFor="qr-image-upload"
-            className="btn btn-secondary"
-            style={{ flex: 1, cursor: 'pointer' }}
-          >
-            🖼️ {scanningFile ? 'Lendo imagem...' : 'Ler imagem de QR'}
-            <input
-              id="qr-image-upload"
-              name="qr-image-upload"
-              type="file"
-              accept="image/*"
-              onChange={(e) => {
-                handleFileChange(e).catch(() => {});
-              }}
-              style={{ display: 'none' }}
-            />
-          </label>
-        </div>
-
-        <div
-          style={{
-            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-            paddingTop: '0.75rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.5rem',
-          }}
-        >
-          <label className="field-label" htmlFor="manual-access-key">
-            Ou cole a URL da SEFAZ / chave de 44 dígitos:
-          </label>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <input
-              id="manual-access-key"
-              name="manual-access-key"
-              className="input"
-              type="text"
-              placeholder="Ex.: http://nfce.sefaz.ce.gov.br/...?p=2326..."
-              value={manualKey}
-              onChange={(e) => setManualKey(e.target.value)}
-            />
-            <button type="button" className="btn btn-primary" onClick={handleManualSubmit}>
-              Importar
-            </button>
-          </div>
-          {onRequestXmlUpload && (
-            <button
+        <Card className="border-[#27272a] bg-[#121215] shadow-2xl">
+          <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-3">
+            <div className="space-y-1">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <QrCode className="h-4 w-4 text-[#10b981]" />
+                <span>Escanear QR Code NFC-e</span>
+              </CardTitle>
+              <CardDescription>
+                Aponte a câmera para o cupom fiscal ou escolha uma alternativa abaixo
+              </CardDescription>
+            </div>
+            <Button
               type="button"
-              className="btn btn-secondary"
-              style={{ marginTop: '0.25rem', width: '100%' }}
-              onClick={() => {
-                onClose();
-                onRequestXmlUpload();
-              }}
+              variant="secondary"
+              size="icon"
+              onClick={onClose}
+              aria-label="Fechar scanner"
             >
-              📄 SEFAZ instável ou Captcha? Importar arquivo XML da Nota
-            </button>
-          )}
-        </div>
-      </div>
+              <X className="h-4 w-4" />
+            </Button>
+          </CardHeader>
+
+          <CardContent className="space-y-4">
+            <div
+              id={readerElementId}
+              className={cn(
+                'w-full overflow-hidden rounded-xl border border-[#27272a] bg-[#09090b]',
+                cameraError ? 'min-h-[60px]' : 'min-h-[240px]',
+              )}
+            />
+
+            {cameraError && (
+              <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/35 bg-amber-500/10 p-3 text-xs text-amber-200">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                <span>{cameraError}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <Button type="button" variant="secondary" onClick={handleSimulateScan}>
+                <Zap className="h-4 w-4 text-[#10b981]" />
+                <span>Simular QR Teste</span>
+              </Button>
+
+              <label
+                htmlFor="qr-image-upload"
+                className={cn(buttonVariants({ variant: 'secondary' }), 'cursor-pointer')}
+              >
+                <ImageUp className="h-4 w-4 text-zinc-300" />
+                <span>{scanningFile ? 'Lendo imagem...' : 'Ler imagem de QR'}</span>
+                <input
+                  id="qr-image-upload"
+                  name="qr-image-upload"
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    handleFileChange(e).catch(() => {});
+                  }}
+                  className="hidden"
+                />
+              </label>
+            </div>
+
+            <div className="space-y-2 border-t border-[#27272a] pt-3">
+              <label
+                className="block text-xs font-medium text-zinc-400"
+                htmlFor="manual-access-key"
+              >
+                Ou cole a URL da SEFAZ / chave de 44 dígitos:
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  id="manual-access-key"
+                  name="manual-access-key"
+                  type="text"
+                  placeholder="Ex.: http://nfce.sefaz.ce.gov.br/...?p=2326..."
+                  value={manualKey}
+                  onChange={(e) => setManualKey(e.target.value)}
+                />
+                <Button type="button" onClick={handleManualSubmit} className="shrink-0">
+                  Importar
+                </Button>
+              </div>
+
+              {onRequestXmlUpload && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="mt-2 w-full"
+                  onClick={() => {
+                    onClose();
+                    onRequestXmlUpload();
+                  }}
+                >
+                  <FileUp className="h-4 w-4 text-[#10b981]" />
+                  <span>SEFAZ instável ou Captcha? Importar XML da Nota</span>
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
     </div>
   );
 }

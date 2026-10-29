@@ -70,21 +70,40 @@ O **Baixômetro** ajuda você a acompanhar a evolução real do preço dos produ
 
 ---
 
-## 🚀 Como Rodar em Produção (Docker Multi-Stage)
+## 🚀 Como Rodar em Produção (Docker Multi-Stage & PaaS)
 
 O projeto conta com imagens otimizadas de produção ([`Dockerfile.api.prod`](infra/docker/Dockerfile.api.prod) com binário Rust `--release` em `debian:bookworm-slim` e [`Dockerfile.web.prod`](infra/docker/Dockerfile.web.prod) servindo o bundle estático via `nginx:alpine` com proxy reverso para `/api`).
 
+### 1. Via Docker Compose (VPS / Self-Hosted)
+
+Defina um `JWT_SECRET` seguro no ambiente antes de subir os containers:
+
 ```bash
+export JWT_SECRET="$(openssl rand -hex 32)"
 docker compose -f infra/docker-compose.prod.yml up --build -d
 ```
 
 - **App Web (Nginx + Proxy `/api`):** [http://localhost](http://localhost) (porta `80`)
-- **API Direta:** [http://localhost:3000/health](http://localhost:3000/health) (porta `3000`)
+- **API Health Check Público:** [http://localhost:3000/health](http://localhost:3000/health) (porta `3000`, retorna `200 OK` sem exigir JWT)
 
 Para encerrar os containers de produção:
 ```bash
 docker compose -f infra/docker-compose.prod.yml down
 ```
+
+### 2. Deploy em Plataformas PaaS (Railway, Render, Fly.io)
+
+1. **Banco de Dados (PostgreSQL 16):** Provisione uma instância gerenciada de PostgreSQL e copie a string `DATABASE_URL`. As migrations (`infra/migrations`) são aplicadas automaticamente pela API no boot.
+2. **Serviço Backend (`apps/api`):**
+   - Aponte para o Dockerfile `infra/docker/Dockerfile.api.prod` (contexto na raiz `.`).
+   - Configure as variáveis de ambiente obrigatórias:
+     - `DATABASE_URL`: URL do PostgreSQL de produção.
+     - `JWT_SECRET`: Segredo forte (mínimo 32 caracteres aleatórios) para assinatura dos tokens JWT.
+     - `API_PORT` (ou `PORT`, detectado automaticamente pelo binário): `3000`.
+   - Configure o **Healthcheck Path** da plataforma para `/health` (rota pública que valida a conexão com o Postgres).
+3. **Serviço Frontend (`apps/web`):**
+   - Aponte para `infra/docker/Dockerfile.web.prod` (ou faça deploy estático com `pnpm install --frozen-lockfile && pnpm build:web` servindo `apps/web/dist`).
+   - Se a API estiver em outro domínio, passe o build arg `VITE_API_URL=https://sua-api.exemplo.com`.
 
 ---
 
@@ -95,6 +114,7 @@ docker compose -f infra/docker-compose.prod.yml down
 | `make dev` | Constrói e inicializa o ambiente de desenvolvimento com hot-reload |
 | `make up` | Inicia os containers de desenvolvimento em segundo plano (`-d`) |
 | `make down` | Para e remove os containers de desenvolvimento |
+| `make reset-db` | Zera completamente os volumes do banco (`down -v`) e sobe o Postgres limpo |
 | `make logs` | Exibe os logs em tempo real de todos os serviços |
 | `make shell-api` | Abre um terminal interativo dentro do container `baixometro-api` |
 | `make psql` | Abre o cliente interativo `psql` conectado ao banco `baixometro` |
