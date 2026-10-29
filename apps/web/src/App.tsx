@@ -4,7 +4,9 @@ import type { HealthResponse } from '@baixometro/shared-types';
 import { api } from './api';
 import DashboardPage from './pages/DashboardPage';
 import ReceiptsPage from './pages/ReceiptsPage';
+import ReceiptDetailPage from './pages/ReceiptDetailPage';
 import NewReceiptPage from './pages/NewReceiptPage';
+import ProductHistoryPage from './pages/ProductHistoryPage';
 
 export default function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -44,6 +46,8 @@ export default function App() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/receipts" element={<ReceiptsPage />} />
             <Route path="/receipts/new" element={<NewReceiptPage />} />
+            <Route path="/receipts/:id" element={<ReceiptDetailPage />} />
+            <Route path="/products/:id" element={<ProductHistoryPage />} />
           </Routes>
         </main>
 

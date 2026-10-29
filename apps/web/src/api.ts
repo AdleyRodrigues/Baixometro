@@ -6,9 +6,14 @@ import type {
   ErrorResponse,
   HealthResponse,
   ImportReceiptRequest,
+  PriceAlert,
+  Product,
+  ProductPriceHistory,
   ReceiptDetail,
   ReceiptSummary,
 } from '@baixometro/shared-types';
+
+export type DashboardPeriod = 'month' | '3m' | 'year';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -46,6 +51,7 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   getReceipts: () => request<ReceiptSummary[]>('/receipts'),
+  getReceipt: (receiptId: string) => request<ReceiptDetail>(`/receipts/${receiptId}`),
   createReceipt: (payload: CreateReceipt) =>
     request<ReceiptDetail>('/receipts', {
       method: 'POST',
@@ -56,5 +62,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  getDashboardSummary: () => request<DashboardSummary>('/dashboard/summary'),
+  getProducts: () => request<Product[]>('/products'),
+  getProductHistory: (productId: string) =>
+    request<ProductPriceHistory>(`/products/${productId}/history`),
+  getAlerts: () => request<PriceAlert[]>('/alerts'),
+  getDashboardSummary: (period: DashboardPeriod = 'month') =>
+    request<DashboardSummary>(`/dashboard/summary?period=${period}`),
 };

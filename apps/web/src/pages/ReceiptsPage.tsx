@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { ReceiptSummary } from '@baixometro/shared-types';
 import { api } from '../api';
@@ -6,6 +6,7 @@ import { formatCurrency, formatDate } from '../format';
 
 export default function ReceiptsPage() {
   const [receipts, setReceipts] = useState<ReceiptSummary[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,8 +24,22 @@ export default function ReceiptsPage() {
   };
 
   useEffect(() => {
-    load();
+    load().catch(() => {});
   }, []);
+
+  const filteredReceipts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return receipts;
+    return receipts.filter((r) => {
+      const formattedDate = formatDate(r.issued_at).toLowerCase();
+      const isoDate = r.issued_at.slice(0, 10);
+      return (
+        r.store_name.toLowerCase().includes(q) ||
+        formattedDate.includes(q) ||
+        isoDate.includes(q)
+      );
+    });
+  }, [receipts, searchQuery]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -34,7 +49,7 @@ export default function ReceiptsPage() {
             Histórico de Notas
           </h1>
           <p style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>
-            Todas as compras registradas
+            Toque em uma nota para ver os itens detalhados
           </p>
         </div>
         <Link to="/receipts/new" className="btn btn-primary">
@@ -42,7 +57,23 @@ export default function ReceiptsPage() {
         </Link>
       </div>
 
-      {loading && <div className="card">Carregando histórico...</div>}
+      {/* Barra de busca por mercado ou data */}
+      <div className="card" style={{ padding: '0.75rem 1rem' }}>
+        <label htmlFor="receipt-search" className="field-label">
+          🔍 Buscar por mercado ou data
+        </label>
+        <input
+          id="receipt-search"
+          name="receipt-search"
+          className="input"
+          type="search"
+          placeholder="Ex.: Atacadão, Teste, 28 de out., 2026-10..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+      </div>
+
+      {loading && <div className="card loading-state">⏳ Carregando histórico de notas...</div>}
 
       {error && (
         <div className="card">
@@ -62,17 +93,32 @@ export default function ReceiptsPage() {
         </div>
       )}
 
-      {!loading && !error && receipts.length > 0 && (
+      {!loading && !error && receipts.length > 0 && filteredReceipts.length === 0 && (
+        <div className="card empty-state">
+          <p>Nenhuma nota encontrada para "{searchQuery}".</p>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setSearchQuery('')}
+          >
+            Limpar filtro
+          </button>
+        </div>
+      )}
+
+      {!loading && !error && filteredReceipts.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          {receipts.map((r) => (
-            <article
+          {filteredReceipts.map((r) => (
+            <Link
               key={r.id}
+              to={`/receipts/${r.id}`}
               className="card"
               style={{
                 padding: '1rem',
                 flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'space-between',
+                transition: 'border-color 0.15s ease',
               }}
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
@@ -89,12 +135,12 @@ export default function ReceiptsPage() {
                 <div style={{ fontWeight: 800, fontSize: '1.125rem', color: '#38bdf8' }}>
                   {formatCurrency(r.total_amount)}
                 </div>
+                <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Ver detalhes →</span>
               </div>
-            </article>
+            </Link>
           ))}
         </div>
       )}
     </div>
   );
 }
-

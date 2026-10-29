@@ -18,6 +18,8 @@ pub struct ErrorResponse {
 pub enum AppError {
     /// Payload inválido (400).
     Validation(String),
+    /// Recurso não encontrado (404).
+    NotFound(String),
     /// Violação de unicidade (409).
     Conflict(String),
     /// Erro inesperado (500). O detalhe vai para o log, não para o cliente.
@@ -28,6 +30,7 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
             AppError::Validation(msg) => (StatusCode::BAD_REQUEST, msg),
+            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
             AppError::Internal(err) => {
                 tracing::error!("Erro interno: {err:#}");

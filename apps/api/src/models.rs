@@ -72,16 +72,42 @@ pub struct ReceiptItem {
     pub gtin: Option<String>,
 }
 
-/// Catálogo de produtos. Alimentado a partir de itens com GTIN.
+/// Catálogo de produtos. Alimentado a partir de itens com GTIN ou aliases.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, TS)]
 #[ts(export)]
-#[allow(dead_code)] // leitura via API chega com o catálogo (fases seguintes)
 pub struct Product {
     pub id: Uuid,
     pub gtin: Option<String>,
     pub name: String,
     pub brand: Option<String>,
     pub created_at: DateTime<Utc>,
+}
+
+/// Alias que associa uma descrição bruta de item de nota a um `Product` canônico.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, TS)]
+#[ts(export)]
+#[allow(dead_code)]
+pub struct ProductAlias {
+    pub id: Uuid,
+    pub product_id: Uuid,
+    pub raw_description: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Observação histórica de preço vinculada a um produto, mercado e item de nota.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, TS)]
+#[ts(export)]
+#[allow(dead_code)]
+pub struct PriceObservation {
+    pub id: Uuid,
+    pub product_id: Uuid,
+    pub store_id: Uuid,
+    pub receipt_item_id: Uuid,
+    #[ts(type = "number")]
+    pub unit_price: Decimal,
+    #[ts(type = "number | null")]
+    pub unit_price_per_kg_l: Option<Decimal>,
+    pub observed_at: DateTime<Utc>,
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +150,10 @@ pub struct CreateReceiptItem {
     #[serde(default)]
     #[ts(optional)]
     pub gtin: Option<String>,
+    /// Vínculo manual opcional com um produto existente.
+    #[serde(default)]
+    #[ts(optional)]
+    pub product_id: Option<Uuid>,
 }
 
 /// Payload do `POST /receipts`. O mercado é localizado (CNPJ ou nome) ou criado.
@@ -202,15 +232,72 @@ pub struct StoreSpending {
     pub receipt_count: i64,
 }
 
-/// Resposta do `GET /dashboard/summary` (sempre referente ao mês corrente).
+/// Ponto da evolução mensal real de gastos no Dashboard.
+#[derive(Debug, Clone, Serialize, FromRow, TS)]
+#[ts(export)]
+pub struct MonthlySpendingPoint {
+    /// Rótulo abreviado do mês (ex.: `Out/26`).
+    pub month: String,
+    #[ts(type = "number")]
+    pub total: Decimal,
+}
+
+/// Resposta do `GET /dashboard/summary` (suporta filtro de período via query `?period=month|3m|year`).
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct DashboardSummary {
+    pub period: String,
     pub month_start: DateTime<Utc>,
     #[ts(type = "number")]
     pub total_month: Decimal,
     #[ts(type = "number")]
     pub receipt_count: i64,
+    /// Economia (positivo) ou gasto acima da média dos últimos 30 dias (negativo).
+    #[ts(type = "number")]
+    pub savings_amount: Decimal,
     pub by_category: Vec<CategorySpending>,
     pub by_store: Vec<StoreSpending>,
+    pub monthly_spending: Vec<MonthlySpendingPoint>,
+}
+
+/// Alerta de alta de preço (> 10% acima da média dos últimos 30 dias).
+#[derive(Debug, Clone, Serialize, FromRow, TS)]
+#[ts(export)]
+pub struct PriceAlert {
+    pub product_id: Uuid,
+    pub product_name: String,
+    pub store_name: String,
+    #[ts(type = "number")]
+    pub previous_avg_price: Decimal,
+    #[ts(type = "number")]
+    pub current_price: Decimal,
+    #[ts(type = "number")]
+    pub variation_pct: Decimal,
+    pub observed_at: DateTime<Utc>,
+}
+
+// ---------------------------------------------------------------------------
+// Produtos e Histórico de Preços (Fase 3)
+// ---------------------------------------------------------------------------
+
+/// Ponto da série histórica de preços de um produto em um mercado.
+#[derive(Debug, Clone, Serialize, FromRow, TS)]
+#[ts(export)]
+pub struct PriceHistoryPoint {
+    pub observation_id: Uuid,
+    pub store_id: Uuid,
+    pub store_name: String,
+    #[ts(type = "number")]
+    pub unit_price: Decimal,
+    #[ts(type = "number | null")]
+    pub unit_price_per_kg_l: Option<Decimal>,
+    pub observed_at: DateTime<Utc>,
+}
+
+/// Resposta do `GET /products/:id/history`.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct ProductPriceHistory {
+    pub product: Product,
+    pub observations: Vec<PriceHistoryPoint>,
 }

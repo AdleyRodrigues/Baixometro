@@ -23,3 +23,6 @@ Thumbs.db
 
 # Docker
 .docker/
+
+# Graphify (índice local do grafo de código)
+graphify-out/

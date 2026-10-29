@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Category, ReceiptDetail } from '@baixometro/shared-types';
+import type { Category, Product, ReceiptDetail } from '@baixometro/shared-types';
 import { api } from '../api';
 import QrScannerModal from '../components/QrScannerModal';
 import { formatCurrency } from '../format';
@@ -12,6 +12,7 @@ interface DraftItem {
   unit: string;
   unit_price: string;
   category_id: string;
+  product_id: string;
   gtin?: string;
 }
 
@@ -35,6 +36,7 @@ function isoToLocalDate(isoString: string): string {
 export default function NewReceiptPage() {
   const navigate = useNavigate();
   const [categories, setCategories] = useState<Category[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [storeName, setStoreName] = useState('');
   const [storeCnpj, setStoreCnpj] = useState<string | undefined>(undefined);
   const [accessKey, setAccessKey] = useState<string | undefined>(undefined);
@@ -47,6 +49,7 @@ export default function NewReceiptPage() {
       unit: 'UN',
       unit_price: '',
       category_id: '',
+      product_id: '',
     },
   ]);
   const [nextKey, setNextKey] = useState(2);
@@ -63,43 +66,61 @@ export default function NewReceiptPage() {
       .catch(() => {
         // categorias são opcionais no preenchimento
       });
+    api
+      .getProducts()
+      .then(setProducts)
+      .catch(() => {
+        // produtos são opcionais no preenchimento
+      });
   }, []);
 
-  const populateFromImported = useCallback((detail: ReceiptDetail) => {
-    setStoreName(detail.store.name);
-    setStoreCnpj(detail.store.cnpj ?? undefined);
-    setAccessKey(detail.access_key ?? undefined);
-    setIssuedDate(isoToLocalDate(detail.issued_at));
+  const populateFromImported = useCallback(
+    (detail: ReceiptDetail, availableProducts: Product[]) => {
+      setStoreName(detail.store.name);
+      setStoreCnpj(detail.store.cnpj ?? undefined);
+      setAccessKey(detail.access_key ?? undefined);
+      setIssuedDate(isoToLocalDate(detail.issued_at));
 
-    const mapped: DraftItem[] = detail.items.map((item, index) => ({
-      key: index + 1,
-      description: item.description,
-      quantity: String(item.quantity),
-      unit: item.unit || 'UN',
-      unit_price: String(item.unit_price),
-      category_id: item.category_id ?? '',
-      gtin: item.gtin ?? undefined,
-    }));
+      const mapped: DraftItem[] = detail.items.map((item, index) => {
+        const matchedProduct = availableProducts.find(
+          (p) =>
+            (item.gtin && p.gtin === item.gtin) ||
+            p.name.toLowerCase() === item.description.trim().toLowerCase(),
+        );
+        return {
+          key: index + 1,
+          description: item.description,
+          quantity: String(item.quantity),
+          unit: item.unit || 'UN',
+          unit_price: String(item.unit_price),
+          category_id: item.category_id ?? '',
+          product_id: matchedProduct?.id ?? '',
+          gtin: item.gtin ?? undefined,
+        };
+      });
 
-    setItems(
-      mapped.length > 0
-        ? mapped
-        : [
-            {
-              key: 1,
-              description: '',
-              quantity: '1',
-              unit: 'UN',
-              unit_price: '',
-              category_id: '',
-            },
-          ],
-    );
-    setNextKey(mapped.length + 1);
-    setImportedBanner(
-      'Nota importada via QR Code! Revise os campos abaixo e clique em Salvar Nota para confirmar.',
-    );
-  }, []);
+      setItems(
+        mapped.length > 0
+          ? mapped
+          : [
+              {
+                key: 1,
+                description: '',
+                quantity: '1',
+                unit: 'UN',
+                unit_price: '',
+                category_id: '',
+                product_id: '',
+              },
+            ],
+      );
+      setNextKey(mapped.length + 1);
+      setImportedBanner(
+        'Nota importada via QR Code! Revise os campos abaixo e clique em Salvar Nota para confirmar.',
+      );
+    },
+    [],
+  );
 
   const handleQrDetected = useCallback(
     async (detectedKey: string) => {
@@ -110,7 +131,9 @@ export default function NewReceiptPage() {
 
       try {
         const importedDetail = await api.importReceipt({ access_key: detectedKey });
-        populateFromImported(importedDetail);
+        const latestProducts = await api.getProducts().catch(() => products);
+        setProducts(latestProducts);
+        populateFromImported(importedDetail, latestProducts);
         navigate('/receipts/new', { replace: true });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Falha ao importar a NFC-e');
@@ -118,7 +141,7 @@ export default function NewReceiptPage() {
         setImporting(false);
       }
     },
-    [navigate, populateFromImported],
+    [navigate, populateFromImported, products],
   );
 
   const addItem = () => {
@@ -131,6 +154,7 @@ export default function NewReceiptPage() {
         unit: 'UN',
         unit_price: '',
         category_id: '',
+        product_id: '',
       },
     ]);
     setNextKey((k) => k + 1);
@@ -183,6 +207,7 @@ export default function NewReceiptPage() {
         unit: item.unit || 'UN',
         unit_price,
         category_id: item.category_id ? item.category_id : undefined,
+        product_id: item.product_id ? item.product_id : undefined,
         gtin: item.gtin,
       };
     });
@@ -430,6 +455,28 @@ export default function NewReceiptPage() {
                     {categories.map((cat) => (
                       <option key={cat.id} value={cat.id}>
                         {cat.icon} {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label className="field-label" htmlFor={`item-prod-${item.key}`}>
+                    Produto Canônico (Vínculo / Histórico)
+                  </label>
+                  <select
+                    id={`item-prod-${item.key}`}
+                    name={`item-prod-${item.key}`}
+                    className="select"
+                    value={item.product_id}
+                    onChange={(e) => updateItem(item.key, 'product_id', e.target.value)}
+                  >
+                    <option value="">
+                      ✨ Criar novo produto (ou vincular automaticamente por GTIN/Alias)
+                    </option>
+                    {products.map((prod) => (
+                      <option key={prod.id} value={prod.id}>
+                        📦 {prod.name} {prod.gtin ? `(${prod.gtin})` : ''}
                       </option>
                     ))}
                   </select>
