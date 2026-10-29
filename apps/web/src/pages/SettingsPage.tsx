@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import {
   ArrowUpRight,
   GitMerge,
+  Globe,
   Heart,
   LogOut,
   Package,
@@ -11,6 +12,7 @@ import {
   Settings,
   Tags,
   User as UserIcon,
+  UserPlus,
 } from 'lucide-react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -23,28 +25,55 @@ import {
   CardHeader,
   CardTitle,
 } from '../components/ui/card';
+import { cn } from '../lib/utils';
 
 export default function SettingsPage() {
-  const { user, logout } = useAuth();
+  const { user, isAuthenticated, logout, updateUser, openAuthModal } = useAuth();
   const navigate = useNavigate();
   const [catCount, setCatCount] = useState<number | null>(null);
   const [prodCount, setProdCount] = useState<number | null>(null);
+  const [updatingShare, setUpdatingShare] = useState(false);
 
   useEffect(() => {
     api
       .getCategories()
       .then((cats) => setCatCount(cats.length))
       .catch(() => {});
-    api
-      .getProducts()
-      .then((prods) => setProdCount(prods.length))
-      .catch(() => {});
-  }, []);
+    if (isAuthenticated) {
+      api
+        .getProducts()
+        .then((prods) => setProdCount(prods.length))
+        .catch(() => {});
+    } else {
+      setProdCount(0);
+    }
+  }, [isAuthenticated]);
 
   const handleLogout = () => {
     logout();
-    navigate('/login', { replace: true });
+    navigate('/', { replace: true });
   };
+
+  const handleToggleShareData = async () => {
+    if (!isAuthenticated || !user) {
+      openAuthModal({ defaultTab: 'register' });
+      return;
+    }
+
+    setUpdatingShare(true);
+    try {
+      const updated = await api.updateUserSettings({
+        share_data: !user.share_data,
+      });
+      updateUser(updated);
+    } catch {
+      // mantém estado atual em caso de falha
+    } finally {
+      setUpdatingShare(false);
+    }
+  };
+
+  const isSharing = Boolean(user?.share_data);
 
   return (
     <motion.div
@@ -62,11 +91,11 @@ export default function SettingsPage() {
           </h1>
         </div>
         <p className="text-xs text-zinc-400">
-          Gerencie sua conta, catálogo de produtos canônicos, mescle itens duplicados e personalize categorias
+          Gerencie sua conta, crowdsourcing de preços, produtos canônicos e categorias
         </p>
       </div>
 
-      {/* Card da Conta Autenticada + Sair da Conta */}
+      {/* Card da Conta (Logado ou Visitante) */}
       <Card className="border-[#27272a] bg-[#121215]/90">
         <CardContent className="flex flex-col justify-between gap-3 p-4 sm:flex-row sm:items-center">
           <div className="flex items-center gap-3">
@@ -76,27 +105,98 @@ export default function SettingsPage() {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <p className="truncate text-sm font-semibold text-zinc-100">
-                  {user?.name || 'Usuário Autenticado'}
+                  {isAuthenticated
+                    ? user?.name || 'Usuário Autenticado'
+                    : 'Modo Visitante'}
                 </p>
-                <Badge variant="default" className="text-[10px]">
-                  Sessão Ativa
+                <Badge
+                  variant={isAuthenticated ? 'default' : 'secondary'}
+                  className="text-[10px]"
+                >
+                  {isAuthenticated ? 'Sessão Ativa' : 'Visitante'}
                 </Badge>
               </div>
               <p className="truncate text-xs text-zinc-400">
-                {user?.email || 'Conta protegida por JWT'}
+                {isAuthenticated
+                  ? user?.email || 'Conta protegida por JWT'
+                  : 'Crie uma conta gratuita para salvar suas notas e histórico'}
               </p>
             </div>
           </div>
 
-          <Button
+          {isAuthenticated ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleLogout}
+              className="border-red-500/30 bg-red-500/10 text-red-300 hover:border-red-500/50 hover:bg-red-500/20 hover:text-red-200"
+            >
+              <LogOut className="h-4 w-4" />
+              <span>Sair da Conta</span>
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              onClick={() => openAuthModal({ defaultTab: 'register' })}
+            >
+              <UserPlus className="h-4 w-4" />
+              <span>Criar Conta / Entrar</span>
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Card de Crowdsourcing (Fase 12) */}
+      <Card className="border-[#10b981]/30 bg-gradient-to-r from-[#10b981]/10 via-[#121215] to-[#121215]">
+        <CardContent className="flex flex-col justify-between gap-4 p-4 sm:flex-row sm:items-center">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#10b981]/30 bg-[#10b981]/15 text-[#10b981]">
+              <Globe className="h-5 w-5" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-semibold text-zinc-100">
+                  Compartilhar meus preços anonimamente (Crowdsourcing)
+                </p>
+                <Badge
+                  variant={isSharing ? 'default' : 'secondary'}
+                  className="text-[10px]"
+                >
+                  {isSharing ? 'Ativado' : 'Desativado'}
+                </Badge>
+              </div>
+              <p className="text-xs text-zinc-400">
+                Ajude a comunidade a encontrar os menores preços nos mercados da sua região. Seus dados pessoais nunca são exibidos.
+              </p>
+            </div>
+          </div>
+
+          <button
             type="button"
-            variant="outline"
-            onClick={handleLogout}
-            className="border-red-500/30 bg-red-500/10 text-red-300 hover:border-red-500/50 hover:bg-red-500/20 hover:text-red-200"
+            role="switch"
+            aria-checked={isSharing}
+            aria-label="Compartilhar meus preços anonimamente (Crowdsourcing)"
+            disabled={updatingShare}
+            onClick={() => {
+              handleToggleShareData().catch(() => {});
+            }}
+            className={cn(
+              'relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10b981]',
+              isSharing
+                ? 'border-[#10b981] bg-[#10b981]'
+                : 'border-[#27272a] bg-[#09090b]',
+              updatingShare && 'opacity-60',
+            )}
           >
-            <LogOut className="h-4 w-4" />
-            <span>Sair da Conta</span>
-          </Button>
+            <span
+              className={cn(
+                'inline-block h-5 w-5 transform rounded-full transition-transform',
+                isSharing
+                  ? 'translate-x-6 bg-[#052e16]'
+                  : 'translate-x-1 bg-zinc-400',
+              )}
+            />
+          </button>
         </CardContent>
       </Card>
 

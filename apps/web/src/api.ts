@@ -6,17 +6,21 @@ import type {
   DashboardSummary,
   ErrorResponse,
   HealthResponse,
+  ImportedReceipt,
   ImportReceiptRequest,
   LoginRequest,
   MergeProductsRequest,
   PriceAlert,
   Product,
   ProductPriceHistory,
+  PublicPriceSearchItem,
   ReceiptDetail,
   ReceiptSummary,
   RegisterRequest,
   UpdateCategory,
   UpdateProduct,
+  UpdateUserSettingsRequest,
+  User,
 } from '@baixometro/shared-types';
 import {
   AUTH_TOKEN_KEY,
@@ -122,6 +126,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  updateUserSettings: (payload: UpdateUserSettingsRequest) =>
+    request<User>('/auth/settings', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
   getCategories: () => request<Category[]>('/categories'),
   createCategory: (payload: CreateCategory) =>
     request<Category>('/categories', {
@@ -144,6 +153,19 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  previewReceipt: (payload: ImportReceiptRequest) =>
+    request<ImportedReceipt>('/receipts/preview', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  previewReceiptXml: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request<ImportedReceipt>('/receipts/preview', {
+      method: 'POST',
+      body: formData,
+    });
+  },
   importReceipt: (payload: ImportReceiptRequest) =>
     request<ReceiptDetail>('/receipts/import', {
       method: 'POST',
@@ -177,4 +199,8 @@ export const api = {
   getAlerts: () => request<PriceAlert[]>('/alerts'),
   getDashboardSummary: (period: DashboardPeriod = '3m') =>
     request<DashboardSummary>(`/dashboard/summary?period=${period}`),
+  searchPublicPrices: (query = '') =>
+    request<PublicPriceSearchItem[]>(
+      `/public/prices/search?q=${encodeURIComponent(query)}`,
+    ),
 };

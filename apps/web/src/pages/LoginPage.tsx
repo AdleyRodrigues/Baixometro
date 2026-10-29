@@ -196,6 +196,7 @@ export default function LoginPage() {
                   <UserIcon className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                   <Input
                     id="auth-name"
+                    name="name"
                     type="text"
                     placeholder="Ex.: Adley Rodrigues"
                     value={name}
@@ -219,6 +220,7 @@ export default function LoginPage() {
                 <Mail className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                 <Input
                   id="auth-email"
+                  name="email"
                   type="email"
                   placeholder="voce@exemplo.com"
                   value={email}
@@ -241,6 +243,7 @@ export default function LoginPage() {
                 <Lock className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                 <Input
                   id="auth-password"
+                  name="password"
                   type="password"
                   placeholder={
                     mode === 'register'

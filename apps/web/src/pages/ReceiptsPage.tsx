@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { ReceiptSummary } from '@baixometro/shared-types';
 import { api } from '../api';
+import { useAuth } from '../context/AuthContext';
 import { Badge } from '../components/ui/badge';
 import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
@@ -22,12 +23,19 @@ import { formatCurrency, formatDate } from '../format';
 import { cn } from '../lib/utils';
 
 export default function ReceiptsPage() {
+  const { isAuthenticated } = useAuth();
   const [receipts, setReceipts] = useState<ReceiptSummary[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
+    if (!isAuthenticated) {
+      setReceipts([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -42,7 +50,8 @@ export default function ReceiptsPage() {
 
   useEffect(() => {
     load().catch(() => {});
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
 
   const filteredReceipts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();

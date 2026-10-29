@@ -20,6 +20,9 @@ pub struct User {
     pub id: Uuid,
     pub name: String,
     pub email: String,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub share_data: bool,
     pub created_at: DateTime<Utc>,
 }
 
@@ -47,6 +50,12 @@ pub struct LoginRequest {
 pub struct AuthResponse {
     pub token: String,
     pub user: User,
+}
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export)]
+pub struct UpdateUserSettingsRequest {
+    pub share_data: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, TS)]
@@ -371,4 +380,24 @@ pub struct UpdateProduct {
 pub struct MergeProductsRequest {
     pub source_product_id: Uuid,
     pub target_product_id: Uuid,
+}
+
+// ---------------------------------------------------------------------------
+// Crowdsourcing de Preços (Fase 12)
+// ---------------------------------------------------------------------------
+
+/// Item retornado pela busca pública de preços (`GET /public/prices/search?q=...`).
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, TS)]
+#[ts(export)]
+pub struct PublicPriceSearchItem {
+    pub product_id: Uuid,
+    pub product_name: String,
+    pub product_brand: Option<String>,
+    pub gtin: Option<String>,
+    pub store_name: String,
+    #[ts(type = "number")]
+    pub unit_price: Decimal,
+    #[ts(type = "number | null")]
+    pub unit_price_per_kg_l: Option<Decimal>,
+    pub observed_at: DateTime<Utc>,
 }

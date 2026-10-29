@@ -13,7 +13,7 @@ use axum::{
     http::{header, StatusCode},
     middleware::Next,
     response::Response,
-    Json,
+    Extension, Json,
 };
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
@@ -23,7 +23,7 @@ use uuid::Uuid;
 
 use crate::{
     error::{AppError, AppResult},
-    models::{AuthResponse, LoginRequest, RegisterRequest, User},
+    models::{AuthResponse, LoginRequest, RegisterRequest, UpdateUserSettingsRequest, User},
     AppState,
 };
 
@@ -58,6 +58,7 @@ struct UserAuthRow {
     name: String,
     email: String,
     password_hash: String,
+    share_data: bool,
     created_at: chrono::DateTime<Utc>,
 }
 
@@ -187,7 +188,7 @@ pub async fn register(
         r#"
         INSERT INTO users (name, email, password_hash)
         VALUES ($1, $2, $3)
-        RETURNING id, name, email, created_at
+        RETURNING id, name, email, share_data, created_at
         "#,
     )
     .bind(name)
@@ -215,7 +216,7 @@ pub async fn login(
 
     let row = sqlx::query_as::<_, UserAuthRow>(
         r#"
-        SELECT id, name, email, password_hash, created_at
+        SELECT id, name, email, password_hash, share_data, created_at
         FROM users
         WHERE LOWER(email) = $1
         LIMIT 1
@@ -236,12 +237,56 @@ pub async fn login(
         id: row.id,
         name: row.name,
         email: row.email,
+        share_data: row.share_data,
         created_at: row.created_at,
     };
 
     let token = create_jwt(user.id, &user.email)?;
 
     Ok(Json(AuthResponse { token, user }))
+}
+
+/// `PUT /auth/settings` — Atualiza a preferência de crowdsourcing (`share_data`) do usuário
+/// e sincroniza o campo `is_public` nas observações de preço existentes desse usuário.
+pub async fn update_user_settings(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Json(payload): Json<UpdateUserSettingsRequest>,
+) -> AppResult<Json<User>> {
+    let mut tx = state.pool.begin().await?;
+
+    let user = sqlx::query_as::<_, User>(
+        r#"
+        UPDATE users
+        SET share_data = $1
+        WHERE id = $2
+        RETURNING id, name, email, share_data, created_at
+        "#,
+    )
+    .bind(payload.share_data)
+    .bind(current_user.id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Usuário não encontrado".to_string()))?;
+
+    sqlx::query(
+        r#"
+        UPDATE price_observations po
+        SET is_public = $1
+        FROM receipt_items ri
+        JOIN receipts r ON r.id = ri.receipt_id
+        WHERE po.receipt_item_id = ri.id
+          AND r.user_id = $2
+        "#,
+    )
+    .bind(payload.share_data)
+    .bind(current_user.id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(Json(user))
 }
 
 #[cfg(test)]
