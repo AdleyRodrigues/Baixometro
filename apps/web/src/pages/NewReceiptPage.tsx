@@ -26,6 +26,7 @@ import { Input } from '../components/ui/input';
 import { formatCurrency } from '../format';
 import { DuplicateReceiptAlertModal } from '../features/receipts/components/DuplicateReceiptAlertModal';
 import { ReceiptItemRow } from '../features/receipts/components/ReceiptItemRow';
+import { SefazErrorModal } from '../features/receipts/components/SefazErrorModal';
 import { useNewReceipt } from '../features/receipts/hooks/useNewReceipt';
 
 export default function NewReceiptPage() {
@@ -49,6 +50,8 @@ export default function NewReceiptPage() {
     duplicateModalOpen,
     setDuplicateModalOpen,
     duplicateReceipt,
+    sefazErrorModalOpen,
+    setSefazErrorModalOpen,
     addItem,
     removeItem,
     updateItem,
@@ -65,6 +68,18 @@ export default function NewReceiptPage() {
         open={duplicateModalOpen}
         duplicateReceipt={duplicateReceipt}
         onClose={() => setDuplicateModalOpen(false)}
+      />
+
+      <SefazErrorModal
+        open={sefazErrorModalOpen}
+        errorMessage={error}
+        onClose={() => setSefazErrorModalOpen(false)}
+        onImportXml={() => {
+          xmlInputRef.current?.click();
+        }}
+        onRetryQr={() => {
+          setScannerOpen(true);
+        }}
       />
 
       <QrScannerModal
@@ -142,6 +157,17 @@ export default function NewReceiptPage() {
             </Button>
           </div>
         </div>
+
+        {/* Indicador de carregamento / consulta à SEFAZ */}
+        {importing && (
+          <div className="flex items-center gap-3 rounded-xl border border-emerald-500/35 bg-emerald-950/20 p-3.5 text-xs text-emerald-200 animate-pulse">
+            <Loader2 className="h-5 w-5 animate-spin text-[#10b981] shrink-0" />
+            <div>
+              <p className="font-semibold text-zinc-100">Consultando nota fiscal na SEFAZ...</p>
+              <p className="text-zinc-400">Aguardando resposta do portal oficial (timeout de segurança: 20s)</p>
+            </div>
+          </div>
+        )}
 
         {/* Banner de Sucesso na Importação */}
         {importedBanner && (

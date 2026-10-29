@@ -153,17 +153,19 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  previewReceipt: (payload: ImportReceiptRequest) =>
+  previewReceipt: (payload: ImportReceiptRequest, init?: RequestInit) =>
     request<ImportedReceipt>('/receipts/preview', {
       method: 'POST',
       body: JSON.stringify(payload),
+      ...init,
     }),
-  previewReceiptXml: (file: File) => {
+  previewReceiptXml: (file: File, init?: RequestInit) => {
     const formData = new FormData();
     formData.append('file', file);
     return request<ImportedReceipt>('/receipts/preview', {
       method: 'POST',
       body: formData,
+      ...init,
     });
   },
   importReceipt: (payload: ImportReceiptRequest) =>

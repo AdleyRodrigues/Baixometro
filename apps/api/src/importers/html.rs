@@ -69,16 +69,27 @@ impl NfceImporter for SefazImporter {
         let body = match HeadlessBrowser::fetch_page_content(&target_url).await {
             Ok(html) => html,
             Err(headless_err) => {
-                tracing::warn!(
-                    "Headless browser falhou ({headless_err:?}). Tentando fallback via requisição HTTP direta..."
-                );
-
-                // 2. Fallback resiliente via reqwest caso o Chromium não esteja disponível
-                match self.client.get(&target_url).send().await {
-                    Ok(resp) if resp.status().is_success() => {
-                        resp.text().await.map_err(|_| headless_err)?
+                let is_browser_unavailable = match &headless_err {
+                    AppError::Unprocessable(msg) => {
+                        msg.contains("não pôde ser iniciado")
+                            || msg.contains("Erro ao configurar navegador")
                     }
-                    _ => return Err(headless_err),
+                    _ => false,
+                };
+
+                // Apenas tenta fallback via reqwest se o binário do Chromium realmente não pôde ser iniciado
+                if is_browser_unavailable {
+                    tracing::warn!(
+                        "Chromium indisponível no host. Tentando fallback via requisição HTTP direta..."
+                    );
+                    match self.client.get(&target_url).send().await {
+                        Ok(resp) if resp.status().is_success() => {
+                            resp.text().await.map_err(|_| headless_err)?
+                        }
+                        _ => return Err(headless_err),
+                    }
+                } else {
+                    return Err(headless_err);
                 }
             }
         };
@@ -104,6 +115,12 @@ pub fn parse_sefaz_html(
     fallback_key: Option<&str>,
 ) -> Result<ImportedReceipt, AppError> {
     let lower = html.to_lowercase();
+    if super::headless::is_sefaz_error_content(&lower) {
+        return Err(AppError::Unprocessable(
+            super::headless::SEFAZ_UNAVAILABLE_MSG.to_string(),
+        ));
+    }
+
     if lower.contains("g-recaptcha")
         || lower.contains("hcaptcha")
         || (lower.contains("captcha") && !lower.contains("tabresult"))

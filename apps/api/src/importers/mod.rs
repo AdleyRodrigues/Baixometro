@@ -193,6 +193,17 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_sefaz_html_error_500_or_unavailable_returns_friendly_422() {
+        let error_html = "<html><body><h1>Erro 500</h1><p>Erro no processamento da consulta. Serviço indisponível.</p></body></html>";
+        let err = parse_sefaz_html(error_html, None).unwrap_err();
+        if let AppError::Unprocessable(msg) = err {
+            assert!(msg.contains("O sistema da SEFAZ está temporariamente indisponível"));
+        } else {
+            panic!("Esperado AppError::Unprocessable com mensagem amigável");
+        }
+    }
+
+    #[test]
     fn test_parse_nfce_xml_invalid_returns_422() {
         let invalid_xml = "<notaInvalida><semItens/></notaInvalida>";
         let err = parse_nfce_xml(invalid_xml).unwrap_err();

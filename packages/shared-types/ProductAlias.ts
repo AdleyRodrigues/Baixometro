@@ -1,5 +1,5 @@
 /**
- * Alias que associa uma descriÃ§Ã£o bruta de item de nota a um `Product` canÃ´nico.
+ * Alias que associa uma descrição bruta de item de nota a um `Product` canônico.
  */
 
 export type ProductAlias = {

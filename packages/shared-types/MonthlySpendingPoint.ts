@@ -1,10 +1,10 @@
 /**
- * Ponto da evoluÃ§Ã£o mensal real de gastos no Dashboard.
+ * Ponto da evolução mensal real de gastos no Dashboard.
  */
 
 export type MonthlySpendingPoint = {
   /**
-   * RÃ³tulo abreviado do mÃªs (ex.: `Out/26`).
+   * Rótulo abreviado do mês (ex.: `Out/26`).
    */
   month: string,
   total: number,

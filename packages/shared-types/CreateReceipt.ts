@@ -1,8 +1,8 @@
 import type { CreateReceiptItem } from "./CreateReceiptItem";
 
 /**
- * Payload do `POST /receipts`. O mercado Ã© localizado (CNPJ ou nome) ou criado.
- * `total_amount` e `total_price` sÃ£o calculados no servidor.
+ * Payload do `POST /receipts`. O mercado é localizado (CNPJ ou nome) ou criado.
+ * `total_amount` e `total_price` são calculados no servidor.
  */
 
 export type CreateReceipt = {
@@ -11,7 +11,7 @@ export type CreateReceipt = {
   issued_at: string,
   access_key?: string,
   /**
-   * Quando `true` (apenas no passo de revisÃ£o pÃ³s-importaÃ§Ã£o), substitui a nota recÃ©m-importada.
+   * Quando `true` (apenas no passo de revisão pós-importação), substitui a nota recém-importada.
    */
   replace_existing?: boolean,
   items: Array<CreateReceiptItem>,

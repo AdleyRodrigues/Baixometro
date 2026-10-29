@@ -1,5 +1,5 @@
 /**
- * Alerta de alta de preÃ§o (> 10% acima da mÃ©dia dos Ãºltimos 30 dias).
+ * Alerta de alta de preço (> 10% acima da média dos últimos 30 dias).
  */
 
 export type PriceAlert = {

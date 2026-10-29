@@ -1,5 +1,5 @@
 /**
- * ObservaÃ§Ã£o histÃ³rica de preÃ§o vinculada a um produto, mercado e item de nota.
+ * Observação histórica de preço vinculada a um produto, mercado e item de nota.
  */
 
 export type PriceObservation = {

@@ -1,5 +1,5 @@
 /**
- * CatÃ¡logo de produtos. Alimentado a partir de itens com GTIN ou aliases.
+ * Catálogo de produtos. Alimentado a partir de itens com GTIN ou aliases.
  */
 
 export type Product = {

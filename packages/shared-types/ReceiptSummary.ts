@@ -1,5 +1,5 @@
 /**
- * Linha do histÃ³rico (`GET /receipts`).
+ * Linha do histórico (`GET /receipts`).
  */
 
 export type ReceiptSummary = {

@@ -4,7 +4,7 @@
 
 export type ImportReceiptRequest = {
   /**
-   * Pode ser a chave de 44 dÃ­gitos ou a URL completa lida do QR Code da NFC-e.
+   * Pode ser a chave de 44 dígitos ou a URL completa lida do QR Code da NFC-e.
    */
   access_key: string,
   /**

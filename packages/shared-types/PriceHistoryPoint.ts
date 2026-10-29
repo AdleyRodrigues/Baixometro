@@ -1,5 +1,5 @@
 /**
- * Ponto da sÃ©rie histÃ³rica de preÃ§os de um produto em um mercado.
+ * Ponto da série histórica de preços de um produto em um mercado.
  */
 
 export type PriceHistoryPoint = {

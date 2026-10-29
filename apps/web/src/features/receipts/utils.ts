@@ -15,3 +15,15 @@ export function isoToLocalDate(isoString: string): string {
   return `${year}-${month}-${day}`;
 }
 
+export function createEmptyDraftItem(key = 1) {
+  return {
+    key,
+    description: '',
+    quantity: '1',
+    unit: 'UN',
+    unit_price: '',
+    category_id: '',
+    product_id: '',
+  };
+}
+
