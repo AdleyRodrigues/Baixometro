@@ -128,6 +128,10 @@ async fn main() -> anyhow::Result<()> {
             get(routes::receipts::list_receipts).post(routes::receipts::create_receipt),
         )
         .route("/receipts/import", post(routes::receipts::import_receipt))
+        .route(
+            "/receipts/import/xml",
+            post(routes::receipts::import_receipt_xml),
+        )
         .route("/receipts/{id}", get(routes::receipts::get_receipt))
         .route("/products", get(routes::products::list_products))
         .route(

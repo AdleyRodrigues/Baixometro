@@ -176,7 +176,12 @@ pub struct CreateReceipt {
 #[derive(Debug, Clone, Deserialize, TS)]
 #[ts(export)]
 pub struct ImportReceiptRequest {
+    /// Pode ser a chave de 44 dígitos ou a URL completa lida do QR Code da NFC-e.
     pub access_key: String,
+    /// URL completa do QR Code da SEFAZ (opcional).
+    #[serde(default)]
+    #[ts(optional)]
+    pub qr_url: Option<String>,
 }
 
 /// Linha do histórico (`GET /receipts`).

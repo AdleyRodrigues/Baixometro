@@ -18,11 +18,16 @@ export type DashboardPeriod = 'month' | '3m' | 'year';
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const isFormData = typeof FormData !== 'undefined' && init?.body instanceof FormData;
+  const headers: Record<string, string> = isFormData
+    ? {}
+    : { 'Content-Type': 'application/json' };
+
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
+      ...headers,
+      ...((init?.headers as Record<string, string> | undefined) ?? {}),
     },
   });
 
@@ -62,6 +67,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  importReceiptXml: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request<ReceiptDetail>('/receipts/import/xml', {
+      method: 'POST',
+      body: formData,
+    });
+  },
   getProducts: () => request<Product[]>('/products'),
   getProductHistory: (productId: string) =>
     request<ProductPriceHistory>(`/products/${productId}/history`),

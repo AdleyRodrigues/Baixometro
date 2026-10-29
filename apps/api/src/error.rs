@@ -22,6 +22,8 @@ pub enum AppError {
     NotFound(String),
     /// Violação de unicidade (409).
     Conflict(String),
+    /// Conteúdo da nota (HTML da SEFAZ ou XML) não pôde ser lido/processado (422).
+    Unprocessable(String),
     /// Erro inesperado (500). O detalhe vai para o log, não para o cliente.
     Internal(anyhow::Error),
 }
@@ -32,6 +34,7 @@ impl IntoResponse for AppError {
             AppError::Validation(msg) => (StatusCode::BAD_REQUEST, msg),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
+            AppError::Unprocessable(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg),
             AppError::Internal(err) => {
                 tracing::error!("Erro interno: {err:#}");
                 (

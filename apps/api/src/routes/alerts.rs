@@ -52,4 +52,3 @@ pub async fn list_price_alerts(State(state): State<AppState>) -> AppResult<Json<
 
     Ok(Json(alerts))
 }
-

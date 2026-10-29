@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Multipart, Path, State},
     http::StatusCode,
     Extension, Json,
 };
@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::{
     auth::CurrentUser,
     error::{AppError, AppResult},
-    importers::{MockImporter, NfceImporter},
+    importers::{parse_nfce_xml, ImportedReceipt, NfceImporter, SefazImporter},
     models::{
         CreateReceipt, CreateReceiptItem, ImportReceiptRequest, Product, Receipt, ReceiptDetail,
         ReceiptItem, ReceiptSummary, Store,
@@ -105,21 +105,75 @@ pub async fn create_receipt(
     Ok((StatusCode::CREATED, Json(detail)))
 }
 
-/// `POST /receipts/import` — Importa uma NFC-e via chave de acesso (usando `MockImporter` na Fase 2),
+/// `POST /receipts/import` — Importa uma NFC-e via URL do QR Code ou chave de acesso (usando `SefazImporter`),
 /// persiste no banco reutilizando a transação de criação e retorna a nota completa.
 pub async fn import_receipt(
     State(state): State<AppState>,
     Extension(user): Extension<CurrentUser>,
     Json(payload): Json<ImportReceiptRequest>,
 ) -> AppResult<(StatusCode, Json<ReceiptDetail>)> {
-    let importer = MockImporter;
-    let imported = importer.fetch_receipt(&payload.access_key).await?;
+    let importer = SefazImporter::new();
+    let target = payload
+        .qr_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(payload.access_key.trim());
 
-    let create_payload = CreateReceipt {
+    let imported = importer.fetch_receipt(target).await?;
+    let create_payload = imported_to_create_receipt(imported);
+
+    let detail = save_receipt_with_items(&state.pool, user.id, create_payload).await?;
+    Ok((StatusCode::CREATED, Json(detail)))
+}
+
+/// `POST /receipts/import/xml` — Recebe um arquivo XML de NFC-e via `multipart/form-data`,
+/// extrai mercado, data, chave e itens, persiste transacionalmente e retorna a nota completa.
+pub async fn import_receipt_xml(
+    State(state): State<AppState>,
+    Extension(user): Extension<CurrentUser>,
+    mut multipart: Multipart,
+) -> AppResult<(StatusCode, Json<ReceiptDetail>)> {
+    let mut xml_content: Option<String> = None;
+
+    while let Some(field) = multipart.next_field().await.map_err(|err| {
+        AppError::Validation(format!("Falha ao ler upload multipart do XML: {err}"))
+    })? {
+        let bytes = field.bytes().await.map_err(|err| {
+            AppError::Validation(format!("Falha ao ler conteúdo do arquivo XML: {err}"))
+        })?;
+
+        if !bytes.is_empty() {
+            let decoded = match std::str::from_utf8(&bytes) {
+                Ok(utf8) => utf8.to_string(),
+                Err(_) => bytes.iter().map(|&b| b as char).collect(),
+            };
+            xml_content = Some(decoded);
+            break;
+        }
+    }
+
+    let raw_xml = xml_content.ok_or_else(|| {
+        AppError::Validation("Nenhum arquivo XML foi enviado na requisição.".to_string())
+    })?;
+
+    let imported = parse_nfce_xml(&raw_xml)?;
+    let create_payload = imported_to_create_receipt(imported);
+
+    let detail = save_receipt_with_items(&state.pool, user.id, create_payload).await?;
+    Ok((StatusCode::CREATED, Json(detail)))
+}
+
+fn imported_to_create_receipt(imported: ImportedReceipt) -> CreateReceipt {
+    CreateReceipt {
         store_name: imported.store_name,
         store_cnpj: imported.store_cnpj,
         issued_at: imported.issued_at,
-        access_key: Some(imported.access_key),
+        access_key: if imported.access_key.trim().is_empty() {
+            None
+        } else {
+            Some(imported.access_key)
+        },
         items: imported
             .items
             .into_iter()
@@ -133,10 +187,7 @@ pub async fn import_receipt(
                 product_id: None,
             })
             .collect(),
-    };
-
-    let detail = save_receipt_with_items(&state.pool, user.id, create_payload).await?;
-    Ok((StatusCode::CREATED, Json(detail)))
+    }
 }
 
 /// Persiste uma nota fiscal e todos os seus itens em uma única transação SQL.

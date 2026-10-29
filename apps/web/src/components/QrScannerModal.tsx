@@ -4,11 +4,12 @@ import { Html5Qrcode } from 'html5-qrcode';
 interface QrScannerModalProps {
   open: boolean;
   onClose: () => void;
-  onDetected: (accessKey: string) => void;
+  onDetected: (accessKey: string, qrUrl?: string) => void;
+  onRequestXmlUpload?: () => void;
 }
 
 const DEMO_NFCE_URL =
-  'https://www.nfce.fazenda.sp.gov.br/NFCeConsultaPublica/Paginas/ConsultaQRCode.aspx?p=35261012345678000199650010000001231000001230|2|1|1|A1B2C3';
+  'http://nfce.sefaz.ce.gov.br/pages/ShowNFCe.html?p=23261007123456000188650010000456781000456789|2|1|1|A1B2C3';
 
 /**
  * Extrai a chave de acesso de 44 dígitos de um QR Code de NFC-e
@@ -24,7 +25,12 @@ export function extractAccessKey(raw: string): string | null {
   return anyMatch?.[1] ?? null;
 }
 
-export default function QrScannerModal({ open, onClose, onDetected }: QrScannerModalProps) {
+export default function QrScannerModal({
+  open,
+  onClose,
+  onDetected,
+  onRequestXmlUpload,
+}: QrScannerModalProps) {
   const reactId = useId().replace(/:/g, '');
   const readerElementId = `qr-reader-${reactId}`;
   const scannerRef = useRef<Html5Qrcode | null>(null);
@@ -61,11 +67,16 @@ export default function QrScannerModal({ open, onClose, onDetected }: QrScannerM
             return;
           }
           handledRef.current = true;
+          const qrUrl =
+            decodedText.trim().startsWith('http://') ||
+            decodedText.trim().startsWith('https://')
+              ? decodedText.trim()
+              : undefined;
           html5QrCode
             .stop()
             .catch(() => {})
             .finally(() => {
-              onDetected(key);
+              onDetected(key, qrUrl);
             });
         },
         () => {
@@ -95,18 +106,21 @@ export default function QrScannerModal({ open, onClose, onDetected }: QrScannerM
   if (!open) return null;
 
   const handleManualSubmit = () => {
-    const key = extractAccessKey(manualKey);
+    const trimmed = manualKey.trim();
+    const key = extractAccessKey(trimmed);
     if (!key) {
       setCameraError('Informe uma URL de NFC-e ou chave válida com 44 dígitos numéricos.');
       return;
     }
-    onDetected(key);
+    const qrUrl =
+      trimmed.startsWith('http://') || trimmed.startsWith('https://') ? trimmed : undefined;
+    onDetected(key, qrUrl);
   };
 
   const handleSimulateScan = () => {
     const key = extractAccessKey(DEMO_NFCE_URL);
     if (key) {
-      onDetected(key);
+      onDetected(key, DEMO_NFCE_URL);
     }
   };
 
@@ -128,7 +142,12 @@ export default function QrScannerModal({ open, onClose, onDetected }: QrScannerM
         );
         return;
       }
-      onDetected(key);
+      const qrUrl =
+        decodedText.trim().startsWith('http://') ||
+        decodedText.trim().startsWith('https://')
+          ? decodedText.trim()
+          : undefined;
+      onDetected(key, qrUrl);
     } catch {
       setCameraError('Não foi possível encontrar um QR Code válido nesta imagem.');
     } finally {
@@ -248,7 +267,7 @@ export default function QrScannerModal({ open, onClose, onDetected }: QrScannerM
               name="manual-access-key"
               className="input"
               type="text"
-              placeholder="Ex.: https://.../?p=35261012345678..."
+              placeholder="Ex.: http://nfce.sefaz.ce.gov.br/...?p=2326..."
               value={manualKey}
               onChange={(e) => setManualKey(e.target.value)}
             />
@@ -256,6 +275,19 @@ export default function QrScannerModal({ open, onClose, onDetected }: QrScannerM
               Importar
             </button>
           </div>
+          {onRequestXmlUpload && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ marginTop: '0.25rem', width: '100%' }}
+              onClick={() => {
+                onClose();
+                onRequestXmlUpload();
+              }}
+            >
+              📄 SEFAZ instável ou Captcha? Importar arquivo XML da Nota
+            </button>
+          )}
         </div>
       </div>
     </div>

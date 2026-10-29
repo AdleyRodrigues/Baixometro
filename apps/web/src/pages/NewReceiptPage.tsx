@@ -1,9 +1,49 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Category, Product, ReceiptDetail } from '@baixometro/shared-types';
 import { api } from '../api';
 import QrScannerModal from '../components/QrScannerModal';
 import { formatCurrency } from '../format';
+
+const SAMPLE_CEARA_NFCE_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe">
+  <NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+    <infNFe Id="NFe23261007123456000188650010000456781000456789" versao="4.00">
+      <ide>
+        <cUF>23</cUF>
+        <mod>65</mod>
+        <dhEmi>2026-10-28T18:30:00-03:00</dhEmi>
+      </ide>
+      <emit>
+        <CNPJ>07123456000188</CNPJ>
+        <xNome>MERCADINHO SAO LUIZ LTDA</xNome>
+        <xFant>Supermercado São Luiz</xFant>
+      </emit>
+      <det nItem="1">
+        <prod>
+          <cProd>101</cProd>
+          <cEAN>7891000100103</cEAN>
+          <xProd>Café Torrado e Moído 500g</xProd>
+          <uCom>UN</uCom>
+          <qCom>2.0000</qCom>
+          <vUnCom>19.9000</vUnCom>
+          <vProd>39.80</vProd>
+        </prod>
+      </det>
+      <det nItem="2">
+        <prod>
+          <cProd>202</cProd>
+          <cEAN>SEM GTIN</cEAN>
+          <xProd>Queijo Coalho Regional</xProd>
+          <uCom>KG</uCom>
+          <qCom>0.6500</qCom>
+          <vUnCom>44.9000</vUnCom>
+          <vProd>29.19</vProd>
+        </prod>
+      </det>
+    </infNFe>
+  </NFe>
+</nfeProc>`;
 
 interface DraftItem {
   key: number;
@@ -58,6 +98,8 @@ export default function NewReceiptPage() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [importedBanner, setImportedBanner] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [suggestXmlFallback, setSuggestXmlFallback] = useState(false);
+  const xmlInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     api
@@ -115,34 +157,80 @@ export default function NewReceiptPage() {
             ],
       );
       setNextKey(mapped.length + 1);
+      setSuggestXmlFallback(false);
       setImportedBanner(
-        'Nota importada via QR Code! Revise os campos abaixo e clique em Salvar Nota para confirmar.',
+        'Nota importada com sucesso! Revise os campos abaixo (produtos e categorias) e clique em Salvar Nota para confirmar.',
       );
     },
     [],
   );
 
   const handleQrDetected = useCallback(
-    async (detectedKey: string) => {
+    async (detectedKey: string, qrUrl?: string) => {
       setScannerOpen(false);
       setImporting(true);
       setError(null);
+      setSuggestXmlFallback(false);
       setImportedBanner(null);
 
       try {
-        const importedDetail = await api.importReceipt({ access_key: detectedKey });
+        const importedDetail = await api.importReceipt({
+          access_key: detectedKey,
+          qr_url: qrUrl,
+        });
         const latestProducts = await api.getProducts().catch(() => products);
         setProducts(latestProducts);
         populateFromImported(importedDetail, latestProducts);
         navigate('/receipts/new', { replace: true });
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Falha ao importar a NFC-e');
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Falha ao consultar a NFC-e no portal da SEFAZ.',
+        );
+        setSuggestXmlFallback(true);
       } finally {
         setImporting(false);
       }
     },
     [navigate, populateFromImported, products],
   );
+
+  const importXmlFileObject = useCallback(
+    async (file: File) => {
+      setImporting(true);
+      setError(null);
+      setSuggestXmlFallback(false);
+      setImportedBanner(null);
+
+      try {
+        const importedDetail = await api.importReceiptXml(file);
+        const latestProducts = await api.getProducts().catch(() => products);
+        setProducts(latestProducts);
+        populateFromImported(importedDetail, latestProducts);
+        navigate('/receipts/new', { replace: true });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Falha ao importar o arquivo XML da nota.');
+      } finally {
+        setImporting(false);
+      }
+    },
+    [navigate, populateFromImported, products],
+  );
+
+  const handleXmlFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    importXmlFileObject(file).catch(() => {});
+    e.target.value = '';
+  };
+
+  const handleSampleXmlImport = () => {
+    const sampleFile = new File([SAMPLE_CEARA_NFCE_XML], 'nfce-ceara-exemplo.xml', {
+      type: 'application/xml',
+    });
+    importXmlFileObject(sampleFile).catch(() => {});
+  };
 
   const addItem = () => {
     setItems((prev) => [
@@ -241,33 +329,57 @@ export default function NewReceiptPage() {
       <QrScannerModal
         open={scannerOpen}
         onClose={() => setScannerOpen(false)}
-        onDetected={(key) => {
-          handleQrDetected(key).catch(() => {});
+        onDetected={(key, qrUrl) => {
+          handleQrDetected(key, qrUrl).catch(() => {});
         }}
+        onRequestXmlUpload={() => {
+          xmlInputRef.current?.click();
+        }}
+      />
+
+      <input
+        ref={xmlInputRef}
+        id="nfce-xml-upload"
+        name="nfce-xml-upload"
+        type="file"
+        accept=".xml,text/xml,application/xml"
+        onChange={handleXmlFileChange}
+        style={{ display: 'none' }}
       />
 
       <form
         onSubmit={handleFormSubmit}
         style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
       >
-        <div className="section-header">
+        <div className="section-header" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
           <div>
             <h1 className="section-title" style={{ fontSize: '1.25rem' }}>
               {accessKey ? 'Revisar Nota Importada' : 'Nova Nota'}
             </h1>
             <p style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>
-              Escaneie o QR Code da NFC-e ou preencha manualmente
+              Escaneie o QR Code da NFC-e, importe o XML oficial ou preencha manualmente
             </p>
           </div>
 
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => setScannerOpen(true)}
-            disabled={importing}
-          >
-            📷 {importing ? 'Importando...' : 'Escanear QR Code'}
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setScannerOpen(true)}
+              disabled={importing}
+            >
+              📷 {importing ? 'Importando...' : 'Escanear QR Code'}
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => xmlInputRef.current?.click()}
+              disabled={importing}
+            >
+              📄 Importar XML da Nota
+            </button>
+          </div>
         </div>
 
         {importedBanner && (
@@ -285,7 +397,48 @@ export default function NewReceiptPage() {
           </div>
         )}
 
-        {error && <div className="alert-error">{error}</div>}
+        {error && (
+          <div
+            className="alert-error"
+            style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}
+          >
+            <div>{error}</div>
+            {suggestXmlFallback && (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.5rem',
+                  paddingTop: '0.5rem',
+                  borderTop: '1px solid rgba(248, 113, 113, 0.25)',
+                }}
+              >
+                <span style={{ fontSize: '0.8125rem', color: '#fecaca' }}>
+                  💡 <strong>Dica:</strong> Se o portal da SEFAZ estiver fora do ar ou exigindo Captcha,
+                  você pode importar diretamente o arquivo <strong>.xml</strong> da NFC-e:
+                </span>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => xmlInputRef.current?.click()}
+                    disabled={importing}
+                  >
+                    📄 Enviar XML da Nota (.xml)
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleSampleXmlImport}
+                    disabled={importing}
+                  >
+                    🧪 Testar com XML de Exemplo (SEFAZ-CE)
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <section className="card">
           <div className="field">

@@ -14,4 +14,5 @@
 1. **Lint e Build obrigatórios:** Ao final de cada implementação, execute `cargo fmt --check`, `cargo build` (via container `baixometro-api`), `pnpm lint` e `pnpm build`.
 2. **Validação no navegador:** Utilize o MCP do Chrome DevTools (`chrome-devtools-mcp`) para inspecionar o console e garantir ausência de erros em runtime.
 3. **Controle de commits:** Nunca faça `git commit` automaticamente sem autorização explícita do usuário; mostre o `git status` ao final e aguarde revisão.
+4. **Informar portas ativas:** Sempre informe claramente em quais portas e URLs o Frontend e o Backend estão rodando ao final das respostas.
 

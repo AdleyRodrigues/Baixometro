@@ -1,6 +1,7 @@
 COMPOSE = docker compose -f infra/docker-compose.yml --env-file .env
+COMPOSE_PROD = docker compose -f infra/docker-compose.prod.yml
 
-.PHONY: dev up down logs shell-api psql clean
+.PHONY: dev up down logs shell-api psql clean prod-up prod-down
 
 dev:
 	$(COMPOSE) up --build
@@ -22,3 +23,9 @@ psql:
 
 clean:
 	$(COMPOSE) down -v --remove-orphans
+
+prod-up:
+	$(COMPOSE_PROD) up --build -d
+
+prod-down:
+	$(COMPOSE_PROD) down
