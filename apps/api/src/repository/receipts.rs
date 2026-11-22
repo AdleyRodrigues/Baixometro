@@ -4,37 +4,56 @@ use uuid::Uuid;
 
 use crate::{
     error::{AppError, AppResult},
-    models::{CreateReceipt, Receipt, ReceiptDetail, ReceiptItem},
+    models::{CreateReceipt, Receipt, ReceiptDetail, ReceiptItem, Store},
     repository::{
         products::{compute_price_per_kg_l, match_or_create_product},
         stores::find_or_create_store,
     },
 };
 
-/// Busca uma nota fiscal já registrada pelo mesmo usuário a partir da chave de acesso (`access_key`).
+/// Busca uma nota fiscal já registrada a partir da chave de acesso (`access_key`).
+/// Se `user_id` for fornecido, filtra pela conta do usuário; caso contrário, busca globalmente.
 pub async fn find_existing_receipt_by_access_key(
     pool: &PgPool,
-    user_id: Uuid,
+    user_id: Option<Uuid>,
     access_key: &str,
 ) -> AppResult<Option<ReceiptDetail>> {
-    let Some(receipt) = sqlx::query_as::<_, Receipt>(
-        r#"
-        SELECT id, user_id, store_id, issued_at, total_amount, access_key, created_at
-        FROM receipts
-        WHERE user_id = $1 AND access_key = $2
-        LIMIT 1
-        "#,
-    )
-    .bind(user_id)
-    .bind(access_key)
-    .fetch_optional(pool)
-    .await?
-    else {
+    let receipt = match user_id {
+        Some(uid) => {
+            sqlx::query_as::<_, Receipt>(
+                r#"
+                SELECT id, user_id, store_id, issued_at, total_amount, access_key, created_at
+                FROM receipts
+                WHERE user_id = $1 AND access_key = $2
+                LIMIT 1
+                "#,
+            )
+            .bind(uid)
+            .bind(access_key)
+            .fetch_optional(pool)
+            .await?
+        }
+        None => {
+            sqlx::query_as::<_, Receipt>(
+                r#"
+                SELECT id, user_id, store_id, issued_at, total_amount, access_key, created_at
+                FROM receipts
+                WHERE access_key = $1
+                LIMIT 1
+                "#,
+            )
+            .bind(access_key)
+            .fetch_optional(pool)
+            .await?
+        }
+    };
+
+    let Some(receipt) = receipt else {
         return Ok(None);
     };
 
-    let store = sqlx::query_as::<_, crate::models::Store>(
-        "SELECT id, name, cnpj, created_at FROM stores WHERE id = $1 LIMIT 1",
+    let store = sqlx::query_as::<_, Store>(
+        "SELECT id, name, cnpj, city, state, created_at FROM stores WHERE id = $1 LIMIT 1",
     )
     .bind(receipt.store_id)
     .fetch_one(pool)
@@ -60,11 +79,11 @@ pub async fn find_existing_receipt_by_access_key(
 }
 
 /// Persiste uma nota fiscal e todos os seus itens em uma única transação SQL.
-/// Se já existir uma nota do mesmo usuário com o mesmo `access_key`, ela é substituída
-/// para permitir que a revisão pós-importação atualize os dados sem duplicar a nota.
+/// Quando `user_id` for `None`, a nota é registrada anonimamente e as observações de preço
+/// geradas têm `is_public = true` para alimentar o crowdsourcing comunitário.
 pub async fn save_receipt_with_items(
     pool: &PgPool,
-    user_id: Uuid,
+    user_id: Option<Uuid>,
     payload: CreateReceipt,
 ) -> AppResult<ReceiptDetail> {
     let store_name = payload.store_name.trim();
@@ -99,17 +118,28 @@ pub async fn save_receipt_with_items(
 
     let mut tx = pool.begin().await?;
 
-    // Bloqueia duplicatas se access_key já foi cadastrada pelo mesmo usuário
+    // Bloqueia duplicatas se access_key já foi cadastrada
     if let Some(ref access_key) = payload.access_key {
         let trimmed_key = access_key.trim();
         if !trimmed_key.is_empty() {
-            let existing_id = sqlx::query_scalar::<_, Uuid>(
-                "SELECT id FROM receipts WHERE user_id = $1 AND access_key = $2 LIMIT 1",
-            )
-            .bind(user_id)
-            .bind(trimmed_key)
-            .fetch_optional(&mut *tx)
-            .await?;
+            let existing_id =
+                match user_id {
+                    Some(uid) => sqlx::query_scalar::<_, Uuid>(
+                        "SELECT id FROM receipts WHERE user_id = $1 AND access_key = $2 LIMIT 1",
+                    )
+                    .bind(uid)
+                    .bind(trimmed_key)
+                    .fetch_optional(&mut *tx)
+                    .await?,
+                    None => {
+                        sqlx::query_scalar::<_, Uuid>(
+                            "SELECT id FROM receipts WHERE access_key = $1 LIMIT 1",
+                        )
+                        .bind(trimmed_key)
+                        .fetch_optional(&mut *tx)
+                        .await?
+                    }
+                };
 
             if let Some(eid) = existing_id {
                 if payload.replace_existing.unwrap_or(false) {
@@ -146,6 +176,18 @@ pub async fn save_receipt_with_items(
     .bind(payload.access_key.as_deref().map(str::trim))
     .fetch_one(&mut *tx)
     .await?;
+
+    // Determina se as observações de preço serão públicas:
+    // Se a nota for anônima (user_id = None), is_public = true.
+    // Se for de usuário autenticado, respeita a preferência de share_data do usuário.
+    let is_public = match user_id {
+        None => true,
+        Some(uid) => sqlx::query_scalar::<_, bool>("SELECT share_data FROM users WHERE id = $1")
+            .bind(uid)
+            .fetch_optional(&mut *tx)
+            .await?
+            .unwrap_or(false),
+    };
 
     let mut saved_items: Vec<ReceiptItem> = Vec::with_capacity(payload.items.len());
 
@@ -188,11 +230,11 @@ pub async fn save_receipt_with_items(
         // Normalização de preço por kg/L
         let price_per_kg_l = compute_price_per_kg_l(item.unit_price, unit, item.description.trim());
 
-        // Registra a observação de preço para alimentar gráficos e médias
+        // Registra a observação de preço para alimentar gráficos e insights de crowdsourcing
         sqlx::query(
             r#"
-            INSERT INTO price_observations (product_id, store_id, receipt_item_id, unit_price, unit_price_per_kg_l, observed_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO price_observations (product_id, store_id, receipt_item_id, unit_price, unit_price_per_kg_l, observed_at, is_public)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             "#,
         )
         .bind(product.id)
@@ -201,6 +243,7 @@ pub async fn save_receipt_with_items(
         .bind(item.unit_price)
         .bind(price_per_kg_l)
         .bind(receipt.issued_at)
+        .bind(is_public)
         .execute(&mut *tx)
         .await?;
 

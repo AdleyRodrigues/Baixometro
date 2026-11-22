@@ -120,7 +120,13 @@ pub fn parse_nfce_xml(xml: &str) -> Result<ImportedReceipt, AppError> {
                     match current_tag.as_str() {
                         "xNome" if store_xnome.is_empty() => store_xnome = val.to_string(),
                         "xFant" if store_xfant.is_empty() => store_xfant = val.to_string(),
-                        "CNPJ" if store_cnpj.is_none() => store_cnpj = Some(val.to_string()),
+                        "CNPJ" if store_cnpj.is_none() => {
+                            let digits: String =
+                                val.chars().filter(|c| c.is_ascii_digit()).collect();
+                            if !digits.is_empty() {
+                                store_cnpj = Some(digits);
+                            }
+                        }
                         _ => {}
                     }
                 } else if in_ide {

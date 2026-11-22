@@ -33,10 +33,72 @@ const DEFAULT_DEV_JWT_SECRET: &str = "baixometro_dev_jwt_secret_change_in_prod";
 /// Tempo de expiração do JWT em dias.
 const JWT_EXPIRATION_DAYS: i64 = 30;
 
-/// Usuário autenticado da requisição corrente, injetado nas extensions pelo `auth_middleware`.
+/// Usuário autenticado da requisição corrente, injetado nas extensions pelo `auth_middleware`
+/// ou extraído automaticamente como `CurrentUser` ou `Option<CurrentUser>`.
 #[derive(Debug, Clone, Copy)]
 pub struct CurrentUser {
     pub id: Uuid,
+}
+
+/// Extrai o token Bearer limpo do cabeçalho `Authorization`.
+fn extract_bearer_token(headers: &axum::http::HeaderMap) -> Option<&str> {
+    headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|auth| {
+            auth.strip_prefix("Bearer ")
+                .or_else(|| auth.strip_prefix("bearer "))
+        })
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+}
+
+impl<S> axum::extract::FromRequestParts<S> for CurrentUser
+where
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        if let Some(user) = parts.extensions.get::<CurrentUser>() {
+            return Ok(*user);
+        }
+
+        let token = extract_bearer_token(&parts.headers).ok_or_else(|| {
+            AppError::Unauthorized("Token de autenticação não fornecido".to_string())
+        })?;
+
+        let user_id = verify_jwt(token)?;
+        Ok(CurrentUser { id: user_id })
+    }
+}
+
+impl<S> axum::extract::OptionalFromRequestParts<S> for CurrentUser
+where
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> Result<Option<Self>, Self::Rejection> {
+        if let Some(user) = parts.extensions.get::<CurrentUser>() {
+            return Ok(Some(*user));
+        }
+
+        let Some(token) = extract_bearer_token(&parts.headers) else {
+            return Ok(None);
+        };
+
+        match verify_jwt(token) {
+            Ok(user_id) => Ok(Some(CurrentUser { id: user_id })),
+            Err(_) => Ok(None),
+        }
+    }
 }
 
 /// Claims armazenados no payload do JWT.
@@ -125,25 +187,23 @@ pub fn verify_jwt(token: &str) -> AppResult<Uuid> {
 
 /// Middleware de autenticação real via header `Authorization: Bearer <token>`.
 pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, AppError> {
-    let auth_header = req
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
+    let token = extract_bearer_token(req.headers())
         .ok_or_else(|| AppError::Unauthorized("Token de autenticação não fornecido".to_string()))?;
-
-    let token = auth_header
-        .strip_prefix("Bearer ")
-        .or_else(|| auth_header.strip_prefix("bearer "))
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-        .ok_or_else(|| {
-            AppError::Unauthorized(
-                "Formato de autorização inválido (use Bearer <token>)".to_string(),
-            )
-        })?;
 
     let user_id = verify_jwt(token)?;
     req.extensions_mut().insert(CurrentUser { id: user_id });
+
+    Ok(next.run(req).await)
+}
+
+/// Middleware de autenticação opcional. Se houver header Authorization válido, injeta
+/// `CurrentUser` nas extensions; caso contrário, segue normalmente sem erro (usuário anônimo).
+pub async fn optional_auth_middleware(mut req: Request, next: Next) -> Result<Response, AppError> {
+    if let Some(token) = extract_bearer_token(req.headers()) {
+        if let Ok(user_id) = verify_jwt(token) {
+            req.extensions_mut().insert(CurrentUser { id: user_id });
+        }
+    }
 
     Ok(next.run(req).await)
 }

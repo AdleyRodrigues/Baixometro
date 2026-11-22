@@ -49,23 +49,41 @@ pub async fn list_receipts(
 }
 
 /// `GET /receipts/{id}` — Retorna uma nota fiscal específica com seu mercado e todos os itens.
+/// Permite visualização de notas do próprio usuário ou notas anônimas.
 pub async fn get_receipt(
     State(state): State<AppState>,
-    Extension(user): Extension<CurrentUser>,
+    user: Option<CurrentUser>,
     Path(receipt_id): Path<Uuid>,
 ) -> AppResult<Json<ReceiptDetail>> {
-    let receipt = sqlx::query_as::<_, Receipt>(
-        r#"
-        SELECT id, user_id, store_id, issued_at, total_amount, access_key, created_at
-        FROM receipts
-        WHERE id = $1 AND user_id = $2
-        LIMIT 1
-        "#,
-    )
-    .bind(receipt_id)
-    .bind(user.id)
-    .fetch_optional(&state.pool)
-    .await?
+    let receipt = match user {
+        Some(u) => {
+            sqlx::query_as::<_, Receipt>(
+                r#"
+                SELECT id, user_id, store_id, issued_at, total_amount, access_key, created_at
+                FROM receipts
+                WHERE id = $1 AND (user_id = $2 OR user_id IS NULL)
+                LIMIT 1
+                "#,
+            )
+            .bind(receipt_id)
+            .bind(u.id)
+            .fetch_optional(&state.pool)
+            .await?
+        }
+        None => {
+            sqlx::query_as::<_, Receipt>(
+                r#"
+                SELECT id, user_id, store_id, issued_at, total_amount, access_key, created_at
+                FROM receipts
+                WHERE id = $1 AND user_id IS NULL
+                LIMIT 1
+                "#,
+            )
+            .bind(receipt_id)
+            .fetch_optional(&state.pool)
+            .await?
+        }
+    }
     .ok_or_else(|| AppError::NotFound("Nota fiscal não encontrada".to_string()))?;
 
     let store = sqlx::query_as::<_, Store>(
@@ -95,20 +113,24 @@ pub async fn get_receipt(
 }
 
 /// `POST /receipts` — Cria uma nota fiscal e seus itens em uma única transação SQL.
+/// Pode ser chamado por um usuário autenticado ou anonimamente (`user_id = None`).
+/// `POST /receipts` — Cria uma nota fiscal e seus itens em uma única transação SQL.
+/// Pode ser chamado por um usuário autenticado ou anonimamente (`user_id = None`).
 pub async fn create_receipt(
     State(state): State<AppState>,
-    Extension(user): Extension<CurrentUser>,
+    user: Option<CurrentUser>,
     Json(payload): Json<CreateReceipt>,
 ) -> AppResult<(StatusCode, Json<ReceiptDetail>)> {
-    let detail = save_receipt_with_items(&state.pool, user.id, payload).await?;
+    let detail = save_receipt_with_items(&state.pool, user.map(|u| u.id), payload).await?;
     Ok((StatusCode::CREATED, Json(detail)))
 }
 
-/// `POST /receipts/preview` — Rota pública (sem autenticação) que lê um XML (`multipart/form-data`)
+/// `POST /receipts/preview` — Rota com autenticação opcional que lê um XML (`multipart/form-data`)
 /// ou uma URL de QR Code / chave de 44 dígitos (`application/json`) e retorna o `ImportedReceipt`
-/// parseado sem salvar no banco de dados (usado no Modo Visitante e na pré-visualização).
+/// parseado sem salvar no banco de dados.
 pub async fn preview_receipt(
     State(state): State<AppState>,
+    _user: Option<CurrentUser>,
     req: Request,
 ) -> AppResult<Json<ImportedReceipt>> {
     let content_type = req
@@ -177,7 +199,7 @@ pub async fn preview_receipt(
 /// persiste no banco reutilizando a transação de criação e retorna a nota completa.
 pub async fn import_receipt(
     State(state): State<AppState>,
-    Extension(user): Extension<CurrentUser>,
+    user: Option<CurrentUser>,
     Json(payload): Json<ImportReceiptRequest>,
 ) -> AppResult<(StatusCode, Json<ReceiptDetail>)> {
     let target = payload
@@ -187,12 +209,14 @@ pub async fn import_receipt(
         .filter(|s| !s.is_empty())
         .unwrap_or(payload.access_key.trim());
 
+    let user_id = user.map(|u| u.id);
+
     // Antes de consultar a SEFAZ, verifica se a chave de 44 dígitos já está no banco
     if let Some(key) =
         extract_access_key(target).or_else(|| extract_access_key(payload.access_key.trim()))
     {
         if let Some(existing) =
-            find_existing_receipt_by_access_key(&state.pool, user.id, &key).await?
+            find_existing_receipt_by_access_key(&state.pool, user_id, &key).await?
         {
             return Err(AppError::DuplicateReceipt(Box::new(existing)));
         }
@@ -202,7 +226,7 @@ pub async fn import_receipt(
     let imported = importer.fetch_receipt(target).await?;
     let create_payload = imported_to_create_receipt(imported);
 
-    let detail = save_receipt_with_items(&state.pool, user.id, create_payload).await?;
+    let detail = save_receipt_with_items(&state.pool, user_id, create_payload).await?;
     Ok((StatusCode::CREATED, Json(detail)))
 }
 
@@ -210,7 +234,7 @@ pub async fn import_receipt(
 /// extrai mercado, data, chave e itens, persiste transacionalmente e retorna a nota completa.
 pub async fn import_receipt_xml(
     State(state): State<AppState>,
-    Extension(user): Extension<CurrentUser>,
+    user: Option<CurrentUser>,
     mut multipart: Multipart,
 ) -> AppResult<(StatusCode, Json<ReceiptDetail>)> {
     let mut xml_content: Option<String> = None;
@@ -239,7 +263,7 @@ pub async fn import_receipt_xml(
     let imported = parse_nfce_xml(&raw_xml)?;
     let create_payload = imported_to_create_receipt(imported);
 
-    let detail = save_receipt_with_items(&state.pool, user.id, create_payload).await?;
+    let detail = save_receipt_with_items(&state.pool, user.map(|u| u.id), create_payload).await?;
     Ok((StatusCode::CREATED, Json(detail)))
 }
 

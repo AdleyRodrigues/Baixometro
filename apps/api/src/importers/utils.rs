@@ -90,21 +90,35 @@ pub fn extract_gtin_from_text(text: &str) -> Option<String> {
 }
 
 pub fn extract_cnpj_from_text(text: &str) -> Option<String> {
-    // Procura padrão XX.XXX.XXX/XXXX-XX ou 14 dígitos após "CNPJ"
-    if let Some(pos) = text.to_uppercase().find("CNPJ") {
-        let after = &text[pos + 4..];
-        let mut digits = String::with_capacity(14);
-        for ch in after.chars() {
-            if ch.is_ascii_digit() {
-                digits.push(ch);
-                if digits.len() == 14 {
-                    return Some(digits);
+    // 1. Procura padrão após "CNPJ" ou "C.N.P.J."
+    let upper = text.to_uppercase();
+    for marker in &["CNPJ", "C.N.P.J."] {
+        if let Some(pos) = upper.find(marker) {
+            let after = &text[pos + marker.len()..];
+            let mut digits = String::with_capacity(14);
+            for ch in after.chars() {
+                if ch.is_ascii_digit() {
+                    digits.push(ch);
+                    if digits.len() == 14 {
+                        return Some(digits);
+                    }
+                } else if !digits.is_empty() && !matches!(ch, '.' | '/' | '-' | ' ' | ':') {
+                    break;
                 }
-            } else if !digits.is_empty() && !matches!(ch, '.' | '/' | '-' | ' ' | ':') {
-                break;
             }
         }
     }
+
+    // 2. Procura padrão formatado de 14 dígitos (ex: 06.057.223/0001-71)
+    for word in text.split_whitespace() {
+        let cleaned =
+            word.trim_matches(|c: char| !c.is_alphanumeric() && c != '.' && c != '/' && c != '-');
+        let digits: String = cleaned.chars().filter(|c| c.is_ascii_digit()).collect();
+        if digits.len() == 14 && (cleaned.contains('/') || cleaned.contains('.')) {
+            return Some(digits);
+        }
+    }
+
     None
 }
 
