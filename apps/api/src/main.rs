@@ -4,6 +4,7 @@ mod importers;
 mod models;
 mod repository;
 mod routes;
+mod utils;
 
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -126,15 +127,18 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState { pool };
 
-    // 5. Registrar rotas públicas (/health, /auth/*, /receipts/preview, /public/prices/search) e rotas protegidas por JWT
+    // 5. Registrar rotas públicas, rotas com autenticação opcional e rotas protegidas por JWT
     let public_routes = Router::new()
         .route("/health", get(health_check))
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
-        .route("/receipts/preview", post(routes::receipts::preview_receipt))
         .route(
             "/public/prices/search",
             get(routes::public_prices::search_public_prices),
+        )
+        .route(
+            "/public/insights",
+            get(routes::public_prices::get_public_insights),
         )
         .route(
             "/categories",
@@ -144,22 +148,25 @@ async fn main() -> anyhow::Result<()> {
             ),
         );
 
-    let protected_routes = Router::new()
-        .route("/auth/settings", put(auth::update_user_settings))
-        .route(
-            "/categories/{id}",
-            put(routes::categories::update_category).delete(routes::categories::delete_category),
-        )
-        .route(
-            "/receipts",
-            get(routes::receipts::list_receipts).post(routes::receipts::create_receipt),
-        )
+    // Rotas de criação e consulta de notas que aceitam doações anônimas ou vinculam a usuário logado
+    let optional_auth_routes = Router::new()
+        .route("/receipts", post(routes::receipts::create_receipt))
+        .route("/receipts/preview", post(routes::receipts::preview_receipt))
         .route("/receipts/import", post(routes::receipts::import_receipt))
         .route(
             "/receipts/import/xml",
             post(routes::receipts::import_receipt_xml),
         )
         .route("/receipts/{id}", get(routes::receipts::get_receipt))
+        .layer(middleware::from_fn(auth::optional_auth_middleware));
+
+    let protected_routes = Router::new()
+        .route("/auth/settings", put(auth::update_user_settings))
+        .route(
+            "/categories/{id}",
+            put(routes::categories::update_category).delete(routes::categories::delete_category),
+        )
+        .route("/receipts", get(routes::receipts::list_receipts))
         .route("/products", get(routes::products::list_products))
         .route("/products/merge", post(routes::products::merge_products))
         .route(
@@ -178,6 +185,7 @@ async fn main() -> anyhow::Result<()> {
         .route_layer(middleware::from_fn(auth::auth_middleware));
 
     let app = public_routes
+        .merge(optional_auth_routes)
         .merge(protected_routes)
         .with_state(state)
         .layer(TraceLayer::new_for_http())
