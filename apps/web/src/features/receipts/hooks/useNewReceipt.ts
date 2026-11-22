@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import type {
   Category,
   ImportedReceipt,
@@ -9,13 +9,21 @@ import type {
 import { api, ApiError } from '../../../api';
 import { useAuth } from '../../../context/AuthContext';
 import { SAMPLE_CEARA_NFCE_XML } from '../constants';
+import { hasUserConsented } from '../components/ConsentModal';
 import type { DraftItem } from '../types';
-import { createEmptyDraftItem, isoToLocalDate, todayLocalISO } from '../utils';
+import {
+  createEmptyDraftItem,
+  isoToLocalDate,
+  mapPreviewToDraftItems,
+  parseReceiptFormItems,
+  todayLocalISO,
+} from '../utils';
 
 export { SAMPLE_CEARA_NFCE_XML, todayLocalISO, isoToLocalDate };
 
 export function useNewReceipt() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isAuthenticated, openAuthModal } = useAuth();
   const xmlInputRef = useRef<HTMLInputElement>(null);
 
@@ -38,6 +46,12 @@ export function useNewReceipt() {
   const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
   const [duplicateReceipt, setDuplicateReceipt] = useState<ReceiptDetail | null>(null);
   const [sefazErrorModalOpen, setSefazErrorModalOpen] = useState(false);
+
+  // Estados da Fase 17: Consentimento e Salvamento Anônimo
+  const [consentModalOpen, setConsentModalOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<'qr' | 'xml' | 'sample' | null>(null);
+  const [anonymousSuccessModalOpen, setAnonymousSuccessModalOpen] = useState(false);
+  const [savedReceiptDetail, setSavedReceiptDetail] = useState<ReceiptDetail | null>(null);
 
   useEffect(() => {
     api.getCategories().then(setCategories).catch(() => {});
@@ -65,11 +79,11 @@ export function useNewReceipt() {
           setDuplicateModalOpen(true);
           return;
         } catch {
-          // fallback para mensagem simples
+          // fallback
         }
       }
 
-      setError(err.message || 'Esta nota fiscal já foi registrada anteriormente no seu histórico.');
+      setError(err.message || 'Esta nota fiscal já foi registrada anteriormente no histórico.');
     },
     [],
   );
@@ -81,30 +95,13 @@ export function useNewReceipt() {
       setAccessKey(preview.access_key || undefined);
       setIssuedDate(isoToLocalDate(preview.issued_at));
 
-      const mapped: DraftItem[] = preview.items.map((item, index) => {
-        const matchedProduct = productCatalog.find(
-          (p) =>
-            (item.gtin && p.gtin === item.gtin) ||
-            p.name.toLowerCase() === item.description.trim().toLowerCase(),
-        );
-        return {
-          key: index + 1,
-          description: item.description,
-          quantity: String(item.quantity),
-          unit: item.unit || 'UN',
-          unit_price: String(item.unit_price),
-          category_id: '',
-          product_id: matchedProduct?.id ?? '',
-          gtin: item.gtin ?? undefined,
-        };
-      });
-
+      const mapped = mapPreviewToDraftItems(preview.items, productCatalog);
       setItems(mapped.length > 0 ? mapped : [createEmptyDraftItem(1)]);
       setNextKey(mapped.length + 1);
       setIsReviewingFreshImport(false);
       setSuggestXmlFallback(false);
       setImportedBanner(
-        'Nota lida com sucesso! Revise os itens, produtos e categorias abaixo e clique em Salvar Nota.',
+        'Nota lida com sucesso! Revise os itens e valores abaixo e clique em Salvar Nota.',
       );
     },
     [],
@@ -118,7 +115,6 @@ export function useNewReceipt() {
       setSuggestXmlFallback(false);
       setImportedBanner(null);
 
-      // Timeout de 20 segundos para evitar loading infinito caso a SEFAZ não responda
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
         controller.abort();
@@ -153,7 +149,6 @@ export function useNewReceipt() {
         const isTimeout =
           (err instanceof DOMException && err.name === 'AbortError') ||
           (err instanceof Error && err.name === 'AbortError');
-
         const is422 = err instanceof ApiError && err.status === 422;
 
         let message =
@@ -227,12 +222,62 @@ export function useNewReceipt() {
     e.target.value = '';
   };
 
-  const handleSampleXmlImport = () => {
+  const executeSampleXmlImport = useCallback(() => {
     const sampleFile = new File([SAMPLE_CEARA_NFCE_XML], 'nfce-ceara-exemplo.xml', {
       type: 'application/xml',
     });
     importXmlFileObject(sampleFile).catch(() => {});
-  };
+  }, [importXmlFileObject]);
+
+  // Interceptação com o ConsentModal
+  const executeAction = useCallback(
+    (action: 'qr' | 'xml' | 'sample') => {
+      if (action === 'qr') {
+        setScannerOpen(true);
+      } else if (action === 'xml') {
+        xmlInputRef.current?.click();
+      } else if (action === 'sample') {
+        executeSampleXmlImport();
+      }
+    },
+    [executeSampleXmlImport],
+  );
+
+  const triggerWithConsent = useCallback(
+    (action: 'qr' | 'xml' | 'sample') => {
+      if (hasUserConsented()) {
+        executeAction(action);
+      } else {
+        setPendingAction(action);
+        setConsentModalOpen(true);
+      }
+    },
+    [executeAction],
+  );
+
+  const handleConsentAccept = useCallback(() => {
+    setConsentModalOpen(false);
+    if (pendingAction) {
+      executeAction(pendingAction);
+      setPendingAction(null);
+    }
+  }, [executeAction, pendingAction]);
+
+  const handleConsentDecline = useCallback(() => {
+    setConsentModalOpen(false);
+    if (pendingAction) {
+      executeAction(pendingAction);
+      setPendingAction(null);
+    }
+  }, [executeAction, pendingAction]);
+
+  // Se URL tem ?scan=1 (ex: clicou no FAB do Dashboard)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('scan') === '1') {
+      triggerWithConsent('qr');
+    }
+  }, [location.search, triggerWithConsent]);
 
   const addItem = () => {
     setItems((prev) => [...prev, createEmptyDraftItem(nextKey)]);
@@ -263,20 +308,12 @@ export function useNewReceipt() {
   }, 0);
 
   const persistReceiptPayload = async (
-    parsedItems: {
-      description: string;
-      quantity: number;
-      unit: string;
-      unit_price: number;
-      category_id?: string;
-      product_id?: string;
-      gtin?: string;
-    }[],
+    parsedItems: ReturnType<typeof parseReceiptFormItems>,
   ) => {
     setSubmitting(true);
     try {
       const issuedAtIso = new Date(`${issuedDate}T12:00:00`).toISOString();
-      await api.createReceipt({
+      const created = await api.createReceipt({
         store_name: storeName.trim(),
         store_cnpj: storeCnpj,
         access_key: accessKey,
@@ -284,6 +321,13 @@ export function useNewReceipt() {
         issued_at: issuedAtIso,
         items: parsedItems,
       });
+
+      if (!isAuthenticated) {
+        setSavedReceiptDetail(created);
+        setAnonymousSuccessModalOpen(true);
+        return;
+      }
+
       navigate('/receipts');
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
@@ -304,45 +348,12 @@ export function useNewReceipt() {
       throw new Error('Informe o nome do supermercado.');
     }
 
-    const parsedItems = items.map((item, idx) => {
-      const description = item.description.trim();
-      if (!description) {
-        throw new Error(`Informe a descrição do item #${idx + 1}.`);
-      }
-      const quantity = Number.parseFloat(item.quantity.replace(',', '.'));
-      if (!Number.isFinite(quantity) || quantity <= 0) {
-        throw new Error(`Quantidade inválida para "${description}".`);
-      }
-      const unit_price = Number.parseFloat(item.unit_price.replace(',', '.'));
-      if (!Number.isFinite(unit_price) || unit_price < 0) {
-        throw new Error(`Preço unitário inválido para "${description}".`);
-      }
-
-      return {
-        description,
-        quantity,
-        unit: item.unit.trim().toUpperCase() || 'UN',
-        unit_price,
-        category_id: item.category_id || undefined,
-        product_id: item.product_id || undefined,
-        gtin: item.gtin || undefined,
-      };
-    });
-
+    const parsedItems = parseReceiptFormItems(items);
     if (parsedItems.length === 0) {
       throw new Error('Adicione ao menos um item à nota fiscal.');
     }
 
-    if (!isAuthenticated) {
-      openAuthModal({
-        defaultTab: 'register',
-        onSuccess: async () => {
-          await persistReceiptPayload(parsedItems);
-        },
-      });
-      return;
-    }
-
+    // Salva anonimamente se não estiver autenticado
     await persistReceiptPayload(parsedItems);
   };
 
@@ -375,13 +386,21 @@ export function useNewReceipt() {
     duplicateReceipt,
     sefazErrorModalOpen,
     setSefazErrorModalOpen,
+    // Fase 17
+    consentModalOpen,
+    handleConsentAccept,
+    handleConsentDecline,
+    anonymousSuccessModalOpen,
+    setAnonymousSuccessModalOpen,
+    savedReceiptDetail,
+    triggerWithConsent,
+    openAuthModal,
     addItem,
     removeItem,
     updateItem,
     previewTotal,
     handleQrDetected,
     handleXmlFileChange,
-    handleSampleXmlImport,
     handleFormSubmit,
   };
 }

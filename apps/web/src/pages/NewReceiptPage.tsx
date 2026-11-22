@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   AlertCircle,
@@ -7,7 +7,6 @@ import {
   FileUp,
   KeyRound,
   Loader2,
-  Package,
   Plus,
   QrCode,
   Sparkles,
@@ -24,12 +23,15 @@ import {
 } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { formatCurrency } from '../format';
+import { AnonymousSaveSuccessModal } from '../features/receipts/components/AnonymousSaveSuccessModal';
+import { ConsentModal } from '../features/receipts/components/ConsentModal';
 import { DuplicateReceiptAlertModal } from '../features/receipts/components/DuplicateReceiptAlertModal';
 import { ReceiptItemRow } from '../features/receipts/components/ReceiptItemRow';
 import { SefazErrorModal } from '../features/receipts/components/SefazErrorModal';
 import { useNewReceipt } from '../features/receipts/hooks/useNewReceipt';
 
 export default function NewReceiptPage() {
+  const navigate = useNavigate();
   const {
     xmlInputRef,
     storeName,
@@ -52,18 +54,42 @@ export default function NewReceiptPage() {
     duplicateReceipt,
     sefazErrorModalOpen,
     setSefazErrorModalOpen,
+    consentModalOpen,
+    handleConsentAccept,
+    handleConsentDecline,
+    anonymousSuccessModalOpen,
+    setAnonymousSuccessModalOpen,
+    triggerWithConsent,
+    openAuthModal,
     addItem,
     removeItem,
     updateItem,
     previewTotal,
     handleQrDetected,
     handleXmlFileChange,
-    handleSampleXmlImport,
     handleFormSubmit,
   } = useNewReceipt();
 
   return (
     <>
+      {/* Modal LGPD de Consentimento Comunitário */}
+      <ConsentModal
+        open={consentModalOpen}
+        onAccept={handleConsentAccept}
+        onDecline={handleConsentDecline}
+      />
+
+      {/* Modal de Sucesso para Salvamento Anônimo */}
+      <AnonymousSaveSuccessModal
+        open={anonymousSuccessModalOpen}
+        onClose={() => {
+          setAnonymousSuccessModalOpen(false);
+          navigate('/');
+        }}
+        onOpenAuth={() => openAuthModal({ defaultTab: 'register' })}
+        onViewRadar={() => navigate('/')}
+      />
+
       <DuplicateReceiptAlertModal
         open={duplicateModalOpen}
         duplicateReceipt={duplicateReceipt}
@@ -74,12 +100,8 @@ export default function NewReceiptPage() {
         open={sefazErrorModalOpen}
         errorMessage={error}
         onClose={() => setSefazErrorModalOpen(false)}
-        onImportXml={() => {
-          xmlInputRef.current?.click();
-        }}
-        onRetryQr={() => {
-          setScannerOpen(true);
-        }}
+        onImportXml={() => triggerWithConsent('xml')}
+        onRetryQr={() => triggerWithConsent('qr')}
       />
 
       <QrScannerModal
@@ -88,9 +110,7 @@ export default function NewReceiptPage() {
         onDetected={(key, qrUrl) => {
           handleQrDetected(key, qrUrl).catch(() => {});
         }}
-        onRequestXmlUpload={() => {
-          xmlInputRef.current?.click();
-        }}
+        onRequestXmlUpload={() => triggerWithConsent('xml')}
       />
 
       <input
@@ -125,7 +145,7 @@ export default function NewReceiptPage() {
             <Button
               type="button"
               variant="secondary"
-              onClick={() => setScannerOpen(true)}
+              onClick={() => triggerWithConsent('qr')}
               disabled={importing}
             >
               {importing ? (
@@ -139,7 +159,7 @@ export default function NewReceiptPage() {
             <Button
               type="button"
               variant="secondary"
-              onClick={() => xmlInputRef.current?.click()}
+              onClick={() => triggerWithConsent('xml')}
               disabled={importing}
             >
               <FileUp className="h-4 w-4 text-[#10b981]" />
@@ -149,7 +169,7 @@ export default function NewReceiptPage() {
             <Button
               type="button"
               variant="secondary"
-              onClick={handleSampleXmlImport}
+              onClick={() => triggerWithConsent('sample')}
               disabled={importing}
             >
               <Sparkles className="h-4 w-4 text-[#10b981]" />
@@ -194,20 +214,11 @@ export default function NewReceiptPage() {
                 <div className="flex flex-wrap gap-2">
                   <Button
                     type="button"
-                    onClick={() => xmlInputRef.current?.click()}
+                    onClick={() => triggerWithConsent('xml')}
                     disabled={importing}
                   >
                     <FileUp className="h-4 w-4" />
-                    <span>Enviar XML da Nota (.xml)</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={handleSampleXmlImport}
-                    disabled={importing}
-                  >
-                    <Sparkles className="h-4 w-4 text-[#10b981]" />
-                    <span>Testar com XML de Exemplo (SEFAZ-CE)</span>
+                    <span>Enviar arquivo XML</span>
                   </Button>
                 </div>
               </div>
@@ -215,87 +226,88 @@ export default function NewReceiptPage() {
           </div>
         )}
 
-        {/* Card 1: Dados do Mercado */}
+        {/* Card 1: Dados Gerais da Nota */}
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <Store className="h-4 w-4 text-[#10b981]" />
-              <span>Dados do Estabelecimento</span>
+          <CardHeader>
+            <CardTitle className="text-base font-semibold text-zinc-100">
+              Dados do Estabelecimento
             </CardTitle>
-            <CardDescription>
-              Identifique o supermercado e a data da compra
+            <CardDescription className="text-xs text-zinc-400">
+              Identificação do supermercado ou loja emissora
             </CardDescription>
           </CardHeader>
-
-          <CardContent className="space-y-3.5">
-            <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label
-                  className="block text-xs font-medium text-zinc-300"
-                  htmlFor="store-name"
-                >
-                  Nome do Mercado *
-                </label>
+          <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label htmlFor="receipt-store-name" className="text-xs font-medium text-zinc-300">
+                Supermercado / Estabelecimento *
+              </label>
+              <div className="relative">
+                <Store className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                 <Input
-                  id="store-name"
+                  id="receipt-store-name"
+                  name="receipt-store-name"
                   type="text"
-                  placeholder="Ex.: Supermercado São Luiz"
+                  placeholder="Ex: Supermercado Pão de Açúcar"
                   value={storeName}
                   onChange={(e) => setStoreName(e.target.value)}
+                  className="pl-9"
                   required
                 />
               </div>
+            </div>
 
-              <div className="space-y-1.5">
-                <label
-                  className="flex items-center gap-1.5 text-xs font-medium text-zinc-300"
-                  htmlFor="issued-date"
-                >
-                  <Calendar className="h-3.5 w-3.5 text-zinc-400" />
-                  <span>Data da Compra *</span>
-                </label>
+            <div className="space-y-1.5">
+              <label htmlFor="receipt-issued-date" className="text-xs font-medium text-zinc-300">
+                Data da Compra *
+              </label>
+              <div className="relative">
+                <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                 <Input
-                  id="issued-date"
+                  id="receipt-issued-date"
+                  name="receipt-issued-date"
                   type="date"
                   value={issuedDate}
                   onChange={(e) => setIssuedDate(e.target.value)}
+                  className="pl-9"
                   required
                 />
               </div>
             </div>
 
             {accessKey && (
-              <div className="flex items-start gap-2 rounded-lg border border-[#27272a] bg-[#09090b] px-3 py-2 text-xs text-zinc-400">
-                <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#10b981]" />
-                <div className="break-all">
-                  <span>Chave NFC-e: </span>
-                  <strong className="font-mono text-zinc-200">{accessKey}</strong>
+              <div className="col-span-full space-y-1.5 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+                <div className="flex items-center gap-1.5 text-xs text-zinc-400">
+                  <KeyRound className="h-3.5 w-3.5 text-emerald-400" />
+                  <span className="font-semibold text-zinc-300">Chave de Acesso da NFC-e:</span>
                 </div>
+                <p className="font-mono text-xs break-all text-emerald-300">{accessKey}</p>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Card 2: Lista de Itens */}
+        {/* Card 2: Itens da Nota */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
-            <div className="space-y-1">
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <Package className="h-4 w-4 text-[#10b981]" />
-                <span>Itens da Compra ({items.length})</span>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-base font-semibold text-zinc-100">
+                Itens da Compra
               </CardTitle>
-              <CardDescription>
-                Informe o preço unitário pago em cada produto
+              <CardDescription className="text-xs text-zinc-400">
+                Produtos cadastrados nesta nota fiscal
               </CardDescription>
             </div>
-
-            <Button type="button" variant="secondary" size="sm" onClick={addItem}>
-              <Plus className="h-4 w-4 text-[#10b981]" />
-              <span>Adicionar item</span>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={addItem}
+              className="gap-1.5 text-xs"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Adicionar Item</span>
             </Button>
           </CardHeader>
-
-          <CardContent className="space-y-3.5">
+          <CardContent className="space-y-3">
             {items.map((item, idx) => (
               <ReceiptItemRow
                 key={item.key}
@@ -326,10 +338,10 @@ export default function NewReceiptPage() {
 
             <div className="flex gap-2.5">
               <Link
-                to="/receipts"
+                to="/"
                 className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-[#27272a] bg-[#18181b] px-4 text-sm font-medium text-zinc-300 hover:bg-zinc-800"
               >
-                Cancelar
+                Voltar
               </Link>
 
               <Button type="submit" disabled={submitting}>

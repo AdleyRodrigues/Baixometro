@@ -12,6 +12,7 @@ import type {
   PriceAlert,
   Product,
   ProductPriceHistory,
+  PublicCityInsights,
   PublicPriceSearchItem,
   ReceiptDetail,
   ReceiptSummary,
@@ -257,5 +258,10 @@ export const api = {
   searchPublicPrices: (query = '') =>
     request<PublicPriceSearchItem[]>(
       `/public/prices/search?q=${encodeURIComponent(query)}`,
+    ),
+
+  getPublicInsights: (city: string, state: string) =>
+    request<PublicCityInsights>(
+      `/public/insights?city=${encodeURIComponent(city)}&state=${encodeURIComponent(state)}`,
     ),
 };
