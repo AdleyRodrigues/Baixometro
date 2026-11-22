@@ -131,4 +131,46 @@ export type Category = {
 - Vírgula obrigatória em todas as propriedades (inclusive na última).
 - Sem comentários de cabeçalho do gerador (`ts-rs`).
 
+---
+
+## 6. Crowdsourcing de Preços: Notas Anônimas e Integração BrasilAPI
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Consumidor as Consumidor (Visitante)
+    participant Web as Frontend (React PWA)
+    participant API as Backend (Axum API)
+    participant BAPI as BrasilAPI (CNPJ)
+    participant DB as PostgreSQL (unaccent)
+
+    Consumidor->>Web: Escaneia QR Code ou envia XML
+    Web->>API: POST /receipts (sem token JWT)
+    API->>BAPI: GET /api/cnpj/v1/{cnpj} (timeout 3s)
+    BAPI-->>API: Retorna { municipio: "SÃO PAULO", uf: "SP" }
+    API->>DB: INSERT stores (city, state)
+    API->>DB: INSERT receipts (user_id = NULL)
+    API->>DB: INSERT price_observations (is_public = TRUE)
+    API-->>Web: Retorna ReceiptDetail (200 OK)
+    Web->>Consumidor: Modal: "Obrigado por ajudar a comunidade!"
+```
+
+### 1. Autenticação Opcional e `Option<CurrentUser>`
+- A rota `POST /receipts` aceita tanto requisições autenticadas (via cabeçalho `Authorization: Bearer <jwt>`) quanto anônimas.
+- Foi implementada a trait `OptionalFromRequestParts` do Axum 0.8 para extrair `Option<CurrentUser>`. Quando a requisição não contém token, o `user_id` é gravado como `NULL` na tabela `receipts` e todas as `price_observations` geradas recebem a flag `is_public = true`.
+- Usuários anônimos alimentam imediatamente o radar comunitário sem barreira de login.
+
+### 2. Enriquecimento de Estabelecimentos via BrasilAPI (`utils/location.rs`)
+- Durante a importação de notas fiscais (via XML ou SEFAZ HTML), o CNPJ do emissor é extraído.
+- A função assíncrona `fetch_store_location(cnpj)` efetua uma requisição para a **BrasilAPI** (`https://brasilapi.com.br/api/cnpj/v1/{cnpj}`), que é gratuita, aberta e dispensa chaves de API.
+- **Resiliência e Performance:**
+  - Timeout estrito de 3 segundos com `reqwest::Client`.
+  - Cache em memória com `RwLock<HashMap<String, Option<StoreLocation>>>` para evitar chamadas repetidas ao mesmo estabelecimento.
+  - Fallback gracioso: caso a BrasilAPI demore ou falhe, o salvamento da nota fiscal prossegue normalmente gravando `city` e `state` como `NULL`.
+
+### 3. Normalização Fonética e Acentuação (`unaccent`)
+- A migration `20261029000012_add_unaccent_extension.sql` habilita a extensão PostgreSQL `unaccent`.
+- As consultas públicas de agregação (`GET /public/insights?city=...&state=...`) utilizam `WHERE unaccent(lower(s.city)) = unaccent(lower($1)) AND lower(s.state) = lower($2)`, permitindo que o usuário digite "São Paulo", "Sao Paulo" ou "sao paulo" e obtenha os mesmos resultados consolidados.
+
+
 

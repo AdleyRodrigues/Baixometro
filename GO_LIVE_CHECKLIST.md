@@ -36,7 +36,7 @@ Guarde essa chave em um gerenciador de segredos. Ela será informada no backend.
 
 ## Passo 2: Criar o Banco PostgreSQL Gerenciado
 
-A API roda com SQLx e aplica todas as migrações automaticamente no momento da inicialização (`sqlx::migrate!`). Escolha um dos provedores gratuitos ou gerenciados:
+A API roda com SQLx e aplica todas as migrações automaticamente no momento da inicialização (`sqlx::migrate!`), incluindo a extensão `unaccent` (migration 12) para buscas insensíveis a acentos no Radar da Cidade. Escolha um dos provedores gratuitos ou gerenciados:
 
 ### Opção A: Neon Database (Recomendado Serverless)
 1. Crie uma conta gratuita em [neon.tech](https://neon.tech).
@@ -52,6 +52,10 @@ A API roda com SQLx e aplica todas as migrações automaticamente no momento da 
 
 ### Opção C: Render Postgres
 Se optar pelo Blueprint do Render (`render.yaml`), o banco gerenciado `baixometro-db` é criado e provisionado automaticamente.
+
+> 💡 **Nota sobre Extensões e APIs Externas:**
+> - A extensão `unaccent` é suportada nativamente em todos esses provedores.
+> - O backend consulta a **BrasilAPI** (`https://brasilapi.com.br`) para mapear Cidade/Estado pelo CNPJ. É uma API pública e gratuita, sem necessidade de tokens de acesso.
 
 ---
 
@@ -126,16 +130,21 @@ Crie o seu arquivo `.env` de produção baseado no `.env.example`:
 
 Com o app publicado em HTTPS:
 
-1. **Abra no Smartphone:** Acesse a URL de produção no navegador do celular (Chrome no Android ou Safari no iOS).
-2. **Instalação PWA:**
+1. **Abra no Smartphone ou Navegador:** Acesse a URL de produção no navegador (Chrome no Android ou Safari no iOS).
+2. **Validação do Radar Público ("Waze dos Preços"):**
+   - O app carrega diretamente no **Radar de Preços da Cidade** (sem exigir login).
+   - Digite ou selecione sua cidade e verifique os cards de *Top 10 Produtos em Alta* e *Top 5 Mercados Mais Baratos*.
+3. **Instalação PWA:**
    - **Android (Chrome):** Toque no banner "Adicionar Baixômetro à tela inicial" ou no menu de 3 pontos → *"Instalar aplicativo"*.
    - **iOS (Safari):** Toque no botão de Compartilhar (quadrado com seta para cima) → *"Adicionar à Tela de Início"*.
-3. **Teste no Supermercado:**
-   - Faça uma compra e pegue o comprovante fiscal com QR Code da SEFAZ (NFC-e).
-   - Abra o Baixômetro pelo ícone na tela inicial do celular.
-   - Toque em **Nova Nota** (`/receipts/new`).
-   - Aponte a câmera para o QR Code da nota:
-     - O backend headless Rust carregará a página da SEFAZ, aguardará a renderização dos itens e extrairá produtos, preços e quantidades.
-     - Revise os itens importados e toque em **Salvar Nota**.
-4. Parabéns! Seu **Baixômetro** pessoal e colaborativo está 100% no ar e operante! 🛒🎉
-
+4. **Teste de Doação de Nota e Consentimento:**
+   - Toque no botão flutuante verde **"Escanear Nota"** (`/receipts/new`).
+   - Na primeira vez, o **Modal de Consentimento LGPD** é apresentado. Aceite e marque *"Não perguntar novamente"*.
+   - Aponte a câmera para o QR Code da nota fiscal ou importe o XML da NFC-e.
+   - O backend headless Rust consulta a SEFAZ e enriquece o CNPJ com Cidade/Estado via BrasilAPI.
+   - Toque em **Salvar Nota Fiscal** (sem estar logado).
+   - O **Modal de Sucesso Anônimo** confirma a doação dos preços para a comunidade!
+5. **Teste de Finanças Pessoais (Opcional):**
+   - No modal de sucesso ou no topo do Radar, clique em *"Criar Conta Grátis"* ou *"Entrar"*.
+   - Uma vez logado, o botão *"Ver Minhas Finanças"* passa a exibir seu histórico pessoal, gráficos mensais e termômetro individual.
+6. Parabéns! Seu **Baixômetro** pessoal e colaborativo está 100% no ar e operante! 🛒🎉

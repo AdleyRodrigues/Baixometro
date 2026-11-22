@@ -1,27 +1,25 @@
 # Baixômetro 🛒📉
 
-> **Gerenciador pessoal de preços de supermercado, mobile-first, local-first e open-source.**
+> **O "Waze dos Preços de Supermercado": Plataforma colaborativa de crowdsourcing de preços locais, mobile-first, anônima e open-source.**
 
-O **Baixômetro** ajuda você a acompanhar a evolução real do preço dos produtos que compra no supermercado, identificar inflação por item ("alertas de alta"), comparar estabelecimentos por **R$/kg ou R$/L** e visualizar para onde vai o seu orçamento mensal — escaneando o QR Code da **NFC-e** diretamente pelo celular ou lançando notas manualmente.
+O **Baixômetro** conecta consumidores para combater a inflação e encontrar os supermercados mais baratos da sua cidade. Funcionando como um "Waze dos Preços", qualquer pessoa pode consultar o **Radar de Preços da Cidade** e doar notas fiscais da NFC-e de forma **100% anônima** (sem necessidade de login ou cadastro). Para quem deseja organizar as finanças individuais, o app oferece ainda controle de orçamento pessoal, histórico comparativo de produtos e alertas automáticos de alta.
 
 ---
 
 ## ✨ Funcionalidades Principais
 
-- **📷 Scanner de QR Code NFC-e (Mobile-First):** Leitura da chave de acesso de 44 dígitos direto pela câmera do celular (`html5-qrcode`) com pré-preenchimento para revisão antes de salvar.
-- **🧠 Inteligência e Matching de Produtos:**
+- 📡 **Radar de Preços da Cidade (Crowdsourcing Local):** Painel público geolocalizado que revela os **Top 10 Produtos em Alta** (maiores picos de inflação nos últimos 30 dias) e o ranking dos **Top 5 Mercados Mais Baratos** da sua região.
+- 🤝 **Doação Anônima de Notas Fiscais (LGPD Compliant):** Envie cupons via QR Code ou arquivo XML da NFC-e sem criar conta. Seus dados pessoais (como CPF ou nome) nunca são armazenados ou expostos.
+- 🏢 **Enriquecimento Automático de Estabelecimentos (BrasilAPI):** Ao identificar o CNPJ da nota fiscal, a API do Baixômetro consulta a [BrasilAPI](https://brasilapi.com.br) (serviço público e 100% gratuito, dispensando qualquer chave de API) para mapear a Cidade e o Estado do supermercado automaticamente.
+- 📷 **Scanner de QR Code NFC-e com Headless Browser:** Leitura da chave de acesso e URL de consulta pela câmera (`html5-qrcode`), com resolução em backend headless Rust (Chromium) para contornar instabilidades da SEFAZ e suporte a fallback instantâneo para o arquivo `.xml`.
+- 🚨 **Alertas de Inflação e Termômetro de Preços:** Identificação instantânea de produtos que subiram mais de **10%** em relação à média recente na cidade ou no seu consumo individual.
+- 🧠 **Inteligência e Matching de Produtos:**
   - Vinculação automática de itens por código de barras (**GTIN/EAN**) ou apelidos históricos (`product_aliases`), além de vínculo manual.
   - Cálculo normalizado automático do preço por quilo ou litro (**R$/kg ou L**), extraindo gramaturas de descrições como `500g`, `5kg`, `1.5L`, `900ml`.
-- **🚨 Alertas de Inflação Pessoal (`GET /alerts`):** Destaque imediato no topo do Dashboard para produtos cujo preço subiu mais de **10%** em relação à média dos últimos 30 dias.
-- **📊 Dashboard Analítico em Tempo Real (Recharts):**
-  - Filtro dinâmico por período (**Mês Atual**, **Últimos 3 meses**, **Ano**).
-  - Cálculo de **Economia vs. Média de 30 dias**.
-  - Gráfico de área da **Evolução Mensal de Gastos** (últimos 6 meses).
-  - Gráfico **Donut (`PieChart`)** de proporção nas **Top 5 Categorias**.
-  - Ranking dos **Top 5 Mercados** e lista de **Produtos Monitorados**.
-- **📈 Histórico de Preços por Produto (`/products/:id`):** Gráfico `LineChart` comparativo entre mercados ao longo do tempo, menor preço histórico e alternância entre `R$/kg·L` e preço unitário.
-- **🧾 Histórico e Detalhamento de Notas (`/receipts` e `/receipts/:id`):** Busca instantânea por nome do mercado ou data e visualização completa dos itens comprados.
-- **🔒 Contratos Tipados Fim a Fim (`ts-rs`):** Structs Rust geram automaticamente as interfaces TypeScript consumidas pelo frontend em `packages/shared-types`.
+- 📊 **Modo Finanças Pessoais (Opcional):**
+  - Alternância rápida com 1 clique entre o *Radar Público* e *Minhas Finanças*.
+  - Gráficos analíticos responsivos (`Recharts`): **Evolução Mensal de Gastos**, **Divisão por Categorias (Donut)** e histórico de preços por produto ao longo do tempo.
+- 🔒 **Contratos Tipados Fim a Fim (`ts-rs`):** Structs Rust geram automaticamente as interfaces TypeScript consumidas pelo frontend em `packages/shared-types`.
 
 ---
 
